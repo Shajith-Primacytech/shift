@@ -1,152 +1,121 @@
-# SHIFT — RAG Pipeline Design
+# SHIFT — RAG Design
 
-## 1. Objective
+## Implemented MVP boundary — October 17, 2026
 
-Build an approval-gated hybrid RAG system that
-retrieves verified industrial maintenance knowledge
-and generates evidence-grounded answers using Gemma.
+LlamaIndex Documents, SentenceSplitter and BaseRetriever are operational. Approved
+written fields are split at 180 embedding tokens with 25 overlap. MiniLM is pinned
+to revision `1110a243fdf4706b3f48f1d95db1a4f5529b4d41`, CPU, normalized 384 dimensions.
+Queries over 240 embedding tokens are rejected. Chunks retain record/version/chunk
+IDs, position, text hash and source fingerprint; no PDF page provenance is claimed.
 
-## 2. Knowledge Sources
+SQLite migration 002 adds vectors, FTS5 and index-generation fingerprints. Lazy
+indexing atomically publishes each approved version; each search joins current
+latest approved versions and the selected machine. Both vector cosine and FTS5
+BM25 operate, combined by reciprocal-rank fusion. Candidates need cosine >=0.35
+and meaningful lexical overlap; this conservative gate is not calibrated confidence.
+Revoked/superseded cached rows cannot pass the current eligibility join. Evidence
+is checked again before inference and immediately before response delivery.
 
-- Technician maintenance notes
-- Voice transcripts reviewed by technicians
-- Historical repair records
-- Maintenance manuals and SOPs
-- Approved repair outcomes
+AMD selects supplied passage IDs; the server returns exact source text only.
+This deliberately replaces free-form synthesis for the deadline. Missing evidence,
+invalid citations, changed approvals and failed inference produce no answer.
+The endpoint accepts no caller-supplied evidence. Source access is the existing
+single-workspace authenticated, approved-only policy plus strict machine scope.
+There is no new tenant or plant ACL model.
 
-Use synthetic data for the hackathon MVP.
+Six real-embedding fixture checks passed; deterministic authorization/citation
+and browser tests are documented in STAGE_3_REPORT.md. Ragas, extraction, background
+jobs, general cross-machine SOPs, branch comparison, recall/MRR and resource
+benchmarks below remain future work, not completed claims.
 
-## 3. Knowledge Ingestion
+## Longer-term design (beyond the implemented slice)
 
-1. Receive technician notes or PDF documents.
-2. Validate input and preserve original content.
-3. Extract PDF text using PyMuPDF when applicable.
-4. Use Gemma to structure technician knowledge.
-5. Save extracted knowledge as pending.
-6. Require supervisor review and approval.
-7. Index approved knowledge only.
+## Framework and storage
 
-## 4. Structured Extraction
+LlamaIndex is the primary RAG framework: Documents, nodes, ingestion transforms,
+local embedding integration, custom retriever interfaces and response synthesis.
+SQLite remains the source of truth for content versions, approval, chunks and
+embeddings. Source text and evidence must remain inspectable independently of LLMs.
 
-Gemma extracts:
+Runtime packages: llama-index-core, llama-index-embeddings-huggingface,
+sentence-transformers, numpy, and the existing PDF extractor decision (PyMuPDF).
+Use selective integrations rather than the umbrella llama-index installation.
+No LlamaCloud, hosted parsing, hosted embeddings, or paid vector database.
 
-- Machine identifier
-- Fault symptoms
-- Root cause, when supported by evidence
-- Diagnostic steps
-- Repair resolution
-- Safety notes
-- Missing information
+## Ingestion
 
-AI must not invent maintenance facts.
+1. Validate and preserve written notes or PDF/TXT/Markdown source bytes.
+2. Extract text with page/section provenance; scanned PDF OCR is deferred.
+3. Human review approves an exact knowledge revision.
+4. Enqueue durable, retryable ingestion keyed by version, content hash, chunking
+   configuration and embedding model revision. Pending/rejected content is not indexed.
+5. Use LlamaIndex section-aware, token-aware splitting with the embedding tokenizer.
+6. Generate normalized local embeddings and persist vectors plus FTS5 entries.
+7. Keep indexing status distinct from approval status. Publish a complete generation
+   atomically; failed work must not expose partial or unauthorized content.
 
-## 5. Chunking Strategy
+Model: sentence-transformers/all-MiniLM-L6-v2, 384 dimensions. Its default limit is
+256 wordpieces. Start around 200–220 tokens with roughly 30-token overlap, reserving
+space for metadata and special tokens. Validate actual complete model input lengths
+against truncation. These are tuning defaults, not measured optima.
 
-Target approximately 500 tokens per chunk.
+Each node preserves record ID, version ID, chunk ID, document ID, page/section,
+position/offsets, original excerpt and content hash. Pin model/tokenizer revisions;
+reindex after incompatible changes. Deduplicate within version without erasing source
+lineage. Framework caches never override database approval.
 
-Use approximately 75 tokens of overlap.
+## Retrieval
 
-Preserve:
-- Knowledge record ID
-- Machine ID
-- Document ID
-- Document title
-- Page number where applicable
-- Chunk position
-- Approval status
+1. Authenticate and validate machine/query scope.
+2. Resolve current eligible approved versions in SQLite.
+3. Embed the question with the same pinned embedding model.
+4. Retrieve up to 20 eligible vector candidates using exact NumPy cosine similarity.
+5. Retrieve up to 20 eligible FTS5 keyword candidates.
+6. Merge deterministic reciprocal ranks; deduplicate and select up to five chunks.
+7. Recheck current approval and active version before generation and before delivery.
 
-Prefer section-aware chunking for documents.
+Implement SQLite adapters as LlamaIndex retrievers returning NodeWithScore objects.
+Filter before each branch's top-k; a post-filter alone is insufficient. No LLM query
+expansion initially. Machine-specific content and explicitly scoped general SOPs
+must have deliberate eligibility rules. Revocation takes effect without waiting
+for index cleanup. Existing source/history routes are not retrieval substitutes.
 
-## 6. Embedding Model
+## Generation and citations
 
-Model:
-sentence-transformers/all-MiniLM-L6-v2
+Use an explicitly configured provider only after AMD endpoint/model/quota verification.
+Keep request limits, timeouts and retry behavior behind a modular inference adapter.
+Use LlamaIndex synthesis with bounded context and provider calls. Treat source text
+as untrusted evidence, never instructions. Do not fabricate procedures or specifications.
 
-Vector dimensions: 384
+Validate citations against the selected, currently approved evidence. Preserve exact
+source/version/chunk references and excerpts. Do not let automatic citation
+re-chunking sever lineage. Missing evidence produces an explicit insufficient-evidence
+result. Without inference, return source excerpts labeled retrieval-only.
 
-Run embeddings locally where practical.
+Record pipeline timings, candidate IDs/ranks/scores, selected evidence, model revision,
+prompt version and provider identity. Scores are not calibrated probabilities.
+Avoid secrets or confidential content in logs. Use synthetic evaluation data.
 
-Use the same model version for document and
-question embeddings.
+## Evaluation
 
-## 7. Vector Database
+Required deterministic tests: Recall@5, MRR, citation validity, machine isolation,
+pending/rejected/revoked exclusion, stale-index handling, reindexing and no-evidence
+behavior. Compare keyword-only, vector-only and hybrid retrieval on a versioned set.
 
-Use Supabase PostgreSQL with pgvector.
+Ragas is an offline evaluation dependency in a separate environment. Its dependencies
+include LangChain and datasets; they must not expand the production API runtime.
+Start with ID-based context precision/recall. Add faithfulness and other judge-based
+metrics only with an explicitly configured evaluator and verified free allowance.
+No default OpenAI provider or automatic paid calls. Missing metrics are "not run".
 
-Store embeddings alongside source references
-and searchable metadata.
+Publish actual dataset size, scores, failed cases, package/model versions, judge
+configuration, cold/warm latency, p50/p95 latency, peak RSS and run date. Human review
+and deterministic authorization tests remain necessary alongside Ragas scores.
 
-Only approved content is authoritative.
+## Resource plan (estimates, not benchmarks)
 
-## 8. Hybrid Retrieval
-
-When a technician submits a question:
-
-1. Validate the question and machine context.
-2. Generate a question embedding.
-3. Retrieve 20 vector candidates.
-4. Retrieve 20 keyword candidates.
-5. Filter by machine and approval status.
-6. Merge rankings using Reciprocal Rank Fusion.
-7. Remove duplicate results.
-8. Select up to five evidence chunks.
-
-These values are initial defaults and must
-be evaluated using test questions.
-
-## 9. Grounded Answer Generation
-
-Send retrieved evidence to Gemma.
-
-Require the model to:
-
-- Answer using available evidence.
-- Cite source record identifiers.
-- Distinguish evidence from inference.
-- State when evidence is insufficient.
-- Avoid fabricated technical specifications.
-- Avoid unsafe maintenance instructions.
-- Treat retrieved text as untrusted data.
-
-## 10. Knowledge Feedback Loop
-
-After a maintenance issue is resolved:
-
-1. Capture the technician's repair outcome.
-2. Extract structured knowledge.
-3. Request expert approval.
-4. Store the approved repair record.
-5. Generate embeddings.
-6. Update the searchable knowledge index.
-
-## 11. Evaluation Metrics
-
-Track:
-
-- Retrieval Recall@5
-- Citation validity
-- Answer groundedness
-- No-evidence handling
-- Extraction accuracy
-- Response latency
-- Approval-filter enforcement
-
-## 12. Safety and Reliability
-
-- Never index pending or rejected records.
-- Never invent machine specifications.
-- Preserve source provenance.
-- Require qualified human review.
-- Do not recommend bypassing safety systems.
-- Handle provider and database failures clearly.
-- Test prompt injection resistance.
-
-## 13. MVP Acceptance Criteria
-
-1. Approved knowledge can be indexed.
-2. Questions retrieve relevant evidence.
-3. Pending knowledge is excluded.
-4. Gemma produces cited answers.
-5. Missing evidence produces uncertainty.
-6. New approved repairs become searchable.
-7. Automated RAG tests pass.
+384-dimensional float32 vectors require 1,536 bytes each: about 14.6 MiB for 10,000
+chunks or 146.5 MiB for 100,000, excluding metadata and copies. Provision approximately
+1–2 GiB for a single embedding process initially, then measure peak usage. Use one
+model instance, bounded batches and indexing concurrency. Avoid duplicating models
+across API workers. Exact search is intended for a small hackathon corpus.

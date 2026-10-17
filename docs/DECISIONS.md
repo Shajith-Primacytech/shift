@@ -22,27 +22,25 @@ Reason:
 
 ## ADR-003: Language Model
 
-Decision: Gemma through AMD Token Factory.
+Decision: AMD Developer Cloud with DeepSeek-V4-Flash for the working MVP.
 
-Reason:
-- Alignment with AMD hackathon technology.
-- Available hackathon inference resources.
-- Supports structured knowledge extraction
-  and evidence-grounded answer generation.
-
-Requirement:
-Verify the exact model, endpoint, and quota
-before implementing the production client.
+Supersedes the original Gemma-first proposal after live endpoint verification.
+The end-to-end troubleshooting workflow was verified with DeepSeek. Gemma had a
+standalone probe only; it does not power the demonstrated workflow. Switching
+AMD_MODEL changes the provider request configuration, but any replacement model
+must pass the JSON/citation contract tests before being presented as supported.
 
 ## ADR-004: Database
 
-Decision: Supabase PostgreSQL with pgvector.
+Decision: SQLite for the local MVP; PostgreSQL/pgvector is a future adapter.
+
+Supersedes the initial Supabase-first plan following the approved Phase 2 audit.
 
 Reason:
 - Relational storage for structured records.
-- Vector similarity search.
-- PostgreSQL full-text search.
-- Suitable free-tier starting point.
+- Local float32 vectors with exact NumPy similarity.
+- SQLite FTS5 keyword search in Stage 3.
+- No hosted account or paid service prerequisite.
 
 ## ADR-005: Embedding Model
 
@@ -74,8 +72,8 @@ exact technical term matching.
 ## ADR-007: Human Approval
 
 Decision:
-AI-extracted maintenance knowledge must
-be reviewed before authoritative indexing.
+Submitted written knowledge must be reviewed before authoritative indexing.
+AI extraction is deferred.
 
 Reason:
 Prevent unverified AI output from becoming
@@ -84,7 +82,10 @@ trusted factory maintenance knowledge.
 ## ADR-008: Agent Framework
 
 Decision:
-Use explicit Python services initially.
+Use explicit Python domain services and LlamaIndex as the primary RAG framework.
+The narrow Stage 3 slice implements chunking, embeddings and retrieval; SHIFT
+validates AMD passage selection. General synthesis remains deferred.
+Authorization and persistence remain SHIFT-owned. No agent orchestration.
 
 Reason:
 - Easier debugging.
@@ -92,11 +93,13 @@ Reason:
 - Better testability.
 - No unnecessary orchestration dependency.
 
-Reconsider agent frameworks only if needed.
+Install selective LlamaIndex packages; explicitly configure local embeddings and
+verified inference. Keep Ragas evaluation in a separate environment.
 
 ## ADR-009: Document Processing
 
-Decision: PyMuPDF for text-based PDFs.
+Future candidate: PyMuPDF for text-based PDFs, subject to license review.
+Not installed or used in the submitted MVP; attachment extraction is deferred.
 
 Reason:
 - Practical PDF text extraction.
@@ -127,7 +130,7 @@ Use:
 - Open-source libraries
 - Local development
 - Available free hosting
-- Supabase free tier
+- SQLite local storage
 - Verified AMD hackathon credits
 
 Do not introduce paid infrastructure
@@ -146,3 +149,27 @@ Requirements:
 - Avoid fabricated specifications.
 - Never recommend bypassing safety systems.
 - Require qualified technician judgment.
+
+## ADR-013: Stage 2 persistence and identity
+
+Use standard-library SQLite with ordered transactional SQL migrations. This is the
+reproducible-schema equivalent for the MVP; SQLAlchemy/Alembic are not required yet.
+Use administrator-created accounts, scrypt password hashes, hashed opaque sessions,
+HttpOnly cookies, origin checking and a required custom header for mutations.
+Versions retain immutable content; authenticated supervisors append review events.
+Only the latest approved version is eligible for technician knowledge reads.
+Store source bytes and checksums transactionally in SQLite for the bounded local MVP.
+No parsing, embeddings, indexing or AI generation in Stage 2.
+
+## October 17, 2026 — Approved Stage 3 MVP slice
+
+Implement the authenticated written-knowledge RAG path now, preserving Stage 2.
+LlamaIndex custom retrieval uses pinned local MiniLM embeddings and SQLite FTS5
+with reciprocal-rank fusion. Current latest approval and machine scope are checked
+in SQL, before inference, and before delivery. SQLite remains authoritative.
+
+For the deadline, AMD DeepSeek selects bounded passage IDs rather than producing
+free-form maintenance instructions. The backend returns only exact source quotes
+with verified citations, preserving source order. Missing evidence, invalid output
+or failed inference produces no answer. Ragas, attachment extraction and background
+indexing remain deferred. See STAGE_3_REPORT.md for actual validation and limits.

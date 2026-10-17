@@ -1,0 +1,148 @@
+{
+  "machines": [
+    {
+      "id": "CNC-01",
+      "name": "Mazak VCN-530C",
+      "area": "Plant Floor A",
+      "category": "CNC machining",
+      "status": "Running",
+      "temperature": 42,
+      "rpm": 2400,
+      "vibration": 0.8,
+      "utilization": 94,
+      "note": "Routine inspection completed"
+    },
+    {
+      "id": "CNC-02",
+      "name": "Haas VF-2",
+      "area": "Plant Floor A",
+      "category": "CNC machining",
+      "status": "Attention",
+      "temperature": 58,
+      "rpm": 1800,
+      "vibration": 2.1,
+      "utilization": 78,
+      "note": "Vibration inspection requested"
+    },
+    {
+      "id": "PRESS-01",
+      "name": "Hydraulic Press H-200",
+      "area": "Plant Floor B",
+      "category": "Forming",
+      "status": "Running",
+      "temperature": 38,
+      "rpm": 0,
+      "vibration": 0.4,
+      "utilization": 89,
+      "note": "Pressure check completed"
+    },
+    {
+      "id": "ASSY-01",
+      "name": "Assembly Line Alpha",
+      "area": "Plant Floor B",
+      "category": "Assembly",
+      "status": "Running",
+      "temperature": 32,
+      "rpm": 120,
+      "vibration": 0.3,
+      "utilization": 96,
+      "note": "Shift handover complete"
+    },
+    {
+      "id": "COMP-01",
+      "name": "Atlas Copco GA 22",
+      "area": "Utilities",
+      "category": "Air systems",
+      "status": "Maintenance",
+      "temperature": 25,
+      "rpm": 0,
+      "vibration": 0,
+      "utilization": 0,
+      "note": "Scheduled filter replacement"
+    },
+    {
+      "id": "CNC-03",
+      "name": "DMG MORI CMX 600",
+      "area": "Plant Floor A",
+      "category": "CNC machining",
+      "status": "Running",
+      "temperature": 40,
+      "rpm": 2100,
+      "vibration": 0.6,
+      "utilization": 91,
+      "note": "Tool inspection completed"
+    }
+  ],
+  "knowledge": [
+    {
+      "id": "SOP-001",
+      "title": "Spindle vibration: inspection checklist",
+      "machineId": "CNC-01",
+      "symptom": "Unusual spindle vibration",
+      "kind": "SOP",
+      "status": "Approved",
+      "author": "Maya Chen",
+      "reviewer": "Maya Chen",
+      "date": "2026-10-14",
+      "content": "SYNTHETIC DEMO SOP \u00b7 Revision 1\n\nScope: CNC-01 spindle vibration. This example is for demonstrating SHIFT, not a machine-specific service procedure.\n\n1. Record the symptom, operation, tool identifier, and when the vibration occurs.\n2. Before inspection, a qualified technician must follow the site-approved shutdown and lockout/tagout procedure and verify the safe state.\n3. Review tooling balance and visible condition using the approved manufacturer procedure.\n4. Review lubrication history and reported spindle noise. Bearing wear, lubrication problems, and tool imbalance are hypotheses, not confirmed diagnoses.\n5. Escalate unresolved findings to the maintenance supervisor. Only authorized personnel may approve return to service.\n\nNo operating limits or repair specifications are provided in this synthetic example."
+    },
+    {
+      "id": "NOTE-002",
+      "title": "Tool imbalance after a changeover",
+      "machineId": "CNC-01",
+      "symptom": "Unusual spindle vibration",
+      "kind": "Field note",
+      "status": "Approved",
+      "author": "Arun Patel",
+      "reviewer": "Maya Chen",
+      "date": "2026-10-12",
+      "content": "SYNTHETIC FIELD NOTE\n\nA demonstration case recorded vibration after a tooling changeover. The maintenance team reviewed tooling condition under the approved isolation procedure and referred the tool assembly for a qualified balance inspection.\n\nOutcome: tooling inspection was requested. This historical example does not establish the cause of a new fault."
+    },
+    {
+      "id": "SOP-003",
+      "title": "Hydraulic pressure: shift inspection",
+      "machineId": "PRESS-01",
+      "symptom": "Pressure fluctuation",
+      "kind": "SOP",
+      "status": "Approved",
+      "author": "Leo Martin",
+      "reviewer": "Maya Chen",
+      "date": "2026-10-11",
+      "content": "SYNTHETIC DEMO SOP\n\nRecord the observed pressure indication and operating context. Report visible leakage or unusual noise to the supervisor. Do not open pressurized components. Inspection and isolation must follow the site-approved procedure."
+    },
+    {
+      "id": "NOTE-004",
+      "title": "Conveyor alignment handover",
+      "machineId": "ASSY-01",
+      "symptom": "Alignment check",
+      "kind": "Field note",
+      "status": "Approved",
+      "author": "Arun Patel",
+      "reviewer": "Maya Chen",
+      "date": "2026-10-10",
+      "content": "SYNTHETIC FIELD NOTE\n\nThe outgoing team reported a conveyor alignment concern during handover. A qualified maintenance inspection was scheduled. Record asset identity and observations before escalation; do not adjust moving equipment."
+    },
+    {
+      "id": "SUB-005",
+      "title": "Intermittent vibration during finishing",
+      "machineId": "CNC-02",
+      "symptom": "Unusual spindle vibration",
+      "kind": "Field note",
+      "status": "Pending",
+      "author": "Arun Patel",
+      "date": "2026-10-15",
+      "content": "Synthetic observation: intermittent vibration was noticed during a finishing operation after a tool change. The technician documented the tool identifier and requested maintenance review. Root cause has not been confirmed."
+    },
+    {
+      "id": "SUB-006",
+      "title": "Compressor filter service observation",
+      "machineId": "COMP-01",
+      "symptom": "Scheduled maintenance",
+      "kind": "Field note",
+      "status": "Pending",
+      "author": "Leo Martin",
+      "date": "2026-10-15",
+      "content": "Synthetic observation: filter service was scheduled at shift handover. The asset remains in the maintenance state in this demonstration. Supervisor review is required before this note enters the knowledge library."
+    }
+  ]
+}

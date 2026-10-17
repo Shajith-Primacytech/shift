@@ -1,0 +1,14 @@
+CREATE TABLE users (id TEXT PRIMARY KEY, username TEXT UNIQUE NOT NULL, name TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('technician','supervisor')), password_hash TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE sessions (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), expires_at INTEGER NOT NULL);
+CREATE TABLE login_attempts (key TEXT NOT NULL, attempted_at INTEGER NOT NULL);
+CREATE INDEX login_attempt_time ON login_attempts(key, attempted_at);
+CREATE TABLE machines (id TEXT PRIMARY KEY, data TEXT NOT NULL);
+CREATE TABLE knowledge_records (id TEXT PRIMARY KEY, owner_id TEXT REFERENCES users(id), created_at TEXT NOT NULL);
+CREATE TABLE knowledge_versions (id TEXT PRIMARY KEY, record_id TEXT NOT NULL REFERENCES knowledge_records(id), revision INTEGER NOT NULL, machine_id TEXT NOT NULL REFERENCES machines(id), title TEXT NOT NULL, symptom TEXT NOT NULL, content TEXT NOT NULL, kind TEXT NOT NULL, author TEXT NOT NULL, submitted_by TEXT REFERENCES users(id), problem TEXT NOT NULL DEFAULT '', root_cause TEXT NOT NULL DEFAULT '', resolution TEXT NOT NULL DEFAULT '', safety_notes TEXT NOT NULL DEFAULT '', status TEXT NOT NULL CHECK(status IN ('Pending','Approved','Rejected','Revoked')), created_at TEXT NOT NULL, UNIQUE(record_id,revision));
+CREATE TABLE review_events (id INTEGER PRIMARY KEY, version_id TEXT NOT NULL REFERENCES knowledge_versions(id), reviewer_id TEXT REFERENCES users(id), reviewer_name TEXT NOT NULL, previous_status TEXT NOT NULL, decision TEXT NOT NULL, note TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE source_documents (id TEXT PRIMARY KEY, version_id TEXT NOT NULL REFERENCES knowledge_versions(id), name TEXT NOT NULL, media_type TEXT NOT NULL, size INTEGER NOT NULL, sha256 TEXT NOT NULL, data BLOB NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE knowledge_chunks (id TEXT PRIMARY KEY, version_id TEXT NOT NULL REFERENCES knowledge_versions(id), document_id TEXT REFERENCES source_documents(id), position INTEGER NOT NULL, page INTEGER, section TEXT, content TEXT NOT NULL, content_hash TEXT NOT NULL);
+CREATE TABLE conversations (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES users(id), machine_id TEXT NOT NULL REFERENCES machines(id), created_at TEXT NOT NULL);
+CREATE TABLE conversation_messages (id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL REFERENCES conversations(id), role TEXT NOT NULL CHECK(role IN ('user','assistant')), content TEXT NOT NULL, response_mode TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE INDEX versions_record ON knowledge_versions(record_id,revision);
+CREATE INDEX versions_status ON knowledge_versions(status,machine_id);

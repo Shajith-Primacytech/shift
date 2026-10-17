@@ -30,3 +30,17 @@ dist/
 # Test outputs
 coverage/
 htmlcov/
+
+# TypeScript build cache and browser test outputs
+*.tsbuildinfo
+playwright-report/
+test-results/
+
+# SQLite journals and private local data
+*.sqlite3-*
+backend/data/
+
+# Generated local development files
+frontend/next-env.d.ts
+.ruff_cache/
+*.log

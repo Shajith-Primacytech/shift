@@ -1,0 +1,8 @@
+[
+  {"machine":"CNC-01","question":"Unusual spindle vibration after a tool change. What should I check?","expected":["SOP-001","NOTE-002"]},
+  {"machine":"PRESS-01","question":"Hydraulic pressure fluctuation","expected":["SOP-003"]},
+  {"machine":"ASSY-01","question":"Conveyor alignment handover","expected":["NOTE-004"]},
+  {"machine":"CNC-01","question":"What is the capital of France?","expected":[]},
+  {"machine":"CNC-02","question":"Spindle vibration","expected":[]},
+  {"machine":"PRESS-01","question":"Spindle vibration after a tool change","expected":[]}
+]

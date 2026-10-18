@@ -1,0 +1,29 @@
+name: Hackathon Linux image validation
+on:
+  push:
+    branches: [codex/hackathon-postgres-deployment]
+permissions:
+  contents: read
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build reviewed backend on Linux
+        run: docker build --progress=plain -f backend/Dockerfile.hackathon -t shift-hackathon:validation backend
+      - name: Check complete local model workload within free host memory
+        timeout-minutes: 8
+        run: |
+          docker run --rm --memory=512m --memory-swap=512m \
+            --entrypoint /app/.venv/bin/python shift-hackathon:validation -c '
+          from app.rag.embeddings import local_model
+          print("Loading pinned embedding model", flush=True)
+          model = local_model()
+          vector = model.get_text_embedding("Synthetic hackathon deployment observation")
+          assert len(vector) == 384
+          print("Embedding succeeded; loading pinned speech model", flush=True)
+          from faster_whisper import WhisperModel
+          speech = WhisperModel("/opt/models/whisper", device="cpu", compute_type="int8", cpu_threads=1, num_workers=1)
+          print("Both model workloads loaded within 512 MB", flush=True)
+          '

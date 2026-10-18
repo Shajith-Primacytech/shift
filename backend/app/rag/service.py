@@ -42,10 +42,14 @@ class RagFailure(Exception):
 
 
 class RagService:
-    def __init__(self, path, provider=None, retriever_factory=ApprovedRetriever):
+    def __init__(self, path, provider=None, retriever_factory=None):
         self.path = path
         self.provider = provider
-        self.retriever_factory = retriever_factory
+        if retriever_factory is None and getattr(path, "backend", None) == "postgres":
+            from app.rag.postgres import PostgresRetriever
+
+            retriever_factory = PostgresRetriever
+        self.retriever_factory = retriever_factory or ApprovedRetriever
 
     async def answer(self, body: Question):
         mentioned = set(
@@ -79,7 +83,9 @@ class RagService:
             ) from None
         if not nodes:
             return self.empty()
-        if not valid_evidence(self.path, body.machine_id, nodes):
+        if not await run_in_threadpool(
+            valid_evidence, self.path, body.machine_id, nodes
+        ):
             raise RagFailure(
                 "evidence_changed",
                 "Evidence approval changed. Ask again to retrieve current approved sources.",
@@ -239,7 +245,9 @@ Select 1–4 relevant passages, in a helpful order. Include the supplied safety 
                 "title": node.metadata["title"],
                 "excerpt": node.text,
             }
-        if not valid_evidence(self.path, body.machine_id, nodes):
+        if not await run_in_threadpool(
+            valid_evidence, self.path, body.machine_id, nodes
+        ):
             raise RagFailure(
                 "evidence_changed",
                 "Evidence was revoked or superseded while answering. No answer was displayed.",

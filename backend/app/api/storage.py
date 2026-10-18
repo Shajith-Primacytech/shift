@@ -22,6 +22,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.storage.capture_schema import Submission, SubmissionFields, mapped_submission
 from app.storage.database import connect
+from app.storage.backend import is_postgres
+from starlette.concurrency import run_in_threadpool
 from app.storage.security import hash_password, now, token_hash, verify_password
 
 router = APIRouter()
@@ -30,12 +32,17 @@ COOKIE = "shift_session"
 
 
 def database(request: Request):
+    if request.app.state.settings.storage_backend == "postgres":
+        yield request.app.state.storage
+        return
     with connect(request.app.state.settings.database_path) as db:
         yield db
 
 
 def current_user(request: Request, db=Depends(database, scope="function")):
     token = request.cookies.get(COOKIE, "")
+    if is_postgres(db):
+        return db.current_user(token)
     user = db.execute(
         "SELECT u.* FROM users u JOIN sessions s ON s.user_id=u.id WHERE s.token_hash=? AND s.expires_at>?",
         (token_hash(token), int(time.time())),
@@ -70,6 +77,12 @@ def login(
 ):
     timestamp = int(time.time())
     key = f"{request.client.host if request.client else 'local'}:{body.username.strip().lower()}"
+    if is_postgres(db):
+        seconds = request.app.state.settings.session_hours * 3600
+        user, token = db.login(
+            body.username, body.password, key, request.cookies.get(COOKIE, ""), seconds
+        )
+        return session_response(request, response, user, token, seconds)
     db.execute("DELETE FROM login_attempts WHERE attempted_at<?", (timestamp - 900,))
     if (
         db.execute(
@@ -100,6 +113,10 @@ def login(
         "INSERT INTO sessions VALUES (?,?,?)",
         (token_hash(token), user["id"], timestamp + seconds),
     )
+    return session_response(request, response, user, token, seconds)
+
+
+def session_response(request, response, user, token, seconds):
     response.set_cookie(
         COOKIE,
         token,
@@ -121,6 +138,10 @@ def me(user=Depends(current_user, scope="function")):
 def logout(
     request: Request, response: Response, db=Depends(database, scope="function")
 ):
+    if is_postgres(db):
+        db.logout(request.cookies.get(COOKIE, ""))
+        response.delete_cookie(COOKIE, path="/")
+        return
     db.execute(
         "DELETE FROM sessions WHERE token_hash=?",
         (token_hash(request.cookies.get(COOKIE, "")),),
@@ -132,6 +153,8 @@ def logout(
 def machines(
     user=Depends(current_user, scope="function"), db=Depends(database, scope="function")
 ):
+    if is_postgres(db):
+        return db.machines()
     return [
         json.loads(r["data"])
         for r in db.execute("SELECT data FROM machines ORDER BY id")
@@ -159,12 +182,21 @@ def serialize(db, row):
     ai = db.execute(
         "SELECT * FROM capture_ai_runs WHERE version_id=?", (r["id"],)
     ).fetchone()
+    return serialize_record(r, review, attachments, ai)
+
+
+def json_value(value):
+    return json.loads(value) if isinstance(value, str) else value
+
+
+def serialize_record(r, review, attachments, ai):
+    """Shared public representation, independent of storage JSON codecs."""
     return dict(
         aiCapture={
             "runId": ai["id"],
-            "execution": json.loads(ai["execution"]),
-            "original": json.loads(ai["original_submission"]),
-            "fields": json.loads(ai["reviewed_structure"]),
+            "execution": json_value(ai["execution"]),
+            "original": json_value(ai["original_submission"]),
+            "fields": json_value(ai["reviewed_structure"]),
         }
         if ai
         else None,
@@ -198,6 +230,8 @@ def knowledge(
     user=Depends(current_user, scope="function"),
     db=Depends(database, scope="function"),
 ):
+    if is_postgres(db):
+        return db.knowledge(machine, q)
     # Do not reuse the privileged submission list for retrieval.
     rows = db.execute(
         f"SELECT v.* FROM knowledge_versions v WHERE {LATEST} AND v.status='Approved' AND (?='' OR v.machine_id=?) AND (?='' OR instr(lower(v.title || ' ' || v.symptom || ' ' || v.content),lower(?))>0) ORDER BY v.created_at DESC",
@@ -210,6 +244,8 @@ def knowledge(
 def submissions(
     user=Depends(current_user, scope="function"), db=Depends(database, scope="function")
 ):
+    if is_postgres(db):
+        return db.submissions(user)
     rows = db.execute(
         f"SELECT v.* FROM knowledge_versions v JOIN knowledge_records r ON r.id=v.record_id WHERE {LATEST} AND (?='supervisor' OR r.owner_id=?) ORDER BY v.created_at DESC",
         (user["role"], user["id"]),
@@ -225,9 +261,14 @@ async def save_submission(metadata, files, user, db, record_id=None):
             422,
             "Invalid submission fields; title, machine, symptom and observation are required",
         )
-    if not db.execute(
-        "SELECT 1 FROM machines WHERE id=?", (body.machineId,)
-    ).fetchone():
+    exists = (
+        (await run_in_threadpool(db.machine_exists, body.machineId))
+        if is_postgres(db)
+        else db.execute(
+            "SELECT 1 FROM machines WHERE id=?", (body.machineId,)
+        ).fetchone()
+    )
+    if not exists:
         raise HTTPException(422, "Unknown machine")
     if len(files) > 4:
         raise HTTPException(422, "Maximum four attachments including voice recording")
@@ -252,6 +293,10 @@ async def save_submission(metadata, files, user, db, record_id=None):
         if len(data) > 10 * 1024 * 1024 or not data:
             raise HTTPException(422, "Attachments must be nonempty and at most 10 MB")
         sources.append((name, media, data))
+    if is_postgres(db):
+        return await run_in_threadpool(
+            db.save_submission, body, sources, user, record_id
+        )
     db.execute("BEGIN IMMEDIATE")
     revision = 1
     timestamp = now()
@@ -387,6 +432,8 @@ def review(
     user=Depends(supervisor, scope="function"),
     db=Depends(database, scope="function"),
 ):
+    if is_postgres(db):
+        return db.review(record_id, body, user)
     db.execute("BEGIN IMMEDIATE")
     row = db.execute(
         f"SELECT v.*,r.owner_id FROM knowledge_versions v JOIN knowledge_records r ON r.id=v.record_id WHERE v.record_id=? AND {LATEST}",
@@ -432,6 +479,8 @@ def history(
     user=Depends(current_user, scope="function"),
     db=Depends(database, scope="function"),
 ):
+    if is_postgres(db):
+        return db.history(record_id, user)
     row = db.execute(
         "SELECT * FROM knowledge_records WHERE id=?", (record_id,)
     ).fetchone()
@@ -461,10 +510,14 @@ def document(
     user=Depends(current_user, scope="function"),
     db=Depends(database, scope="function"),
 ):
-    row = db.execute(
-        f"SELECT d.*,v.status,r.owner_id,({LATEST}) AS latest FROM source_documents d JOIN knowledge_versions v ON v.id=d.version_id JOIN knowledge_records r ON r.id=v.record_id WHERE d.id=?",
-        (document_id,),
-    ).fetchone()
+    row = (
+        db.document(document_id)
+        if is_postgres(db)
+        else db.execute(
+            f"SELECT d.*,v.status,r.owner_id,({LATEST}) AS latest FROM source_documents d JOIN knowledge_versions v ON v.id=d.version_id JOIN knowledge_records r ON r.id=v.record_id WHERE d.id=?",
+            (document_id,),
+        ).fetchone()
+    )
     if not row or not (
         user["role"] == "supervisor"
         or row["owner_id"] == user["id"]

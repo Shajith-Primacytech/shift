@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from app.api.storage import current_user, database
+from app.storage.backend import is_postgres
+from starlette.concurrency import run_in_threadpool
 from app.rag.service import Question, RagFailure, RagService
 
 router = APIRouter()
@@ -12,7 +14,9 @@ router = APIRouter()
 def rag_service(request: Request):
     if not hasattr(request.app.state, "rag_service"):
         request.app.state.rag_service = RagService(
-            request.app.state.settings.database_path
+            request.app.state.storage
+            if request.app.state.settings.storage_backend == "postgres"
+            else request.app.state.settings.database_path
         )
     return request.app.state.rag_service
 
@@ -25,9 +29,14 @@ async def troubleshoot(
     db=Depends(database, scope="function"),
     service=Depends(rag_service),
 ):
-    if not db.execute(
-        "SELECT 1 FROM machines WHERE id=?", (body.machine_id,)
-    ).fetchone():
+    exists = (
+        (await run_in_threadpool(db.machine_exists, body.machine_id))
+        if is_postgres(db)
+        else db.execute(
+            "SELECT 1 FROM machines WHERE id=?", (body.machine_id,)
+        ).fetchone()
+    )
+    if not exists:
         raise HTTPException(404, "Machine not found")
     if not hasattr(request.app.state, "rag_request_lock"):
         request.app.state.rag_request_lock = asyncio.Lock()
@@ -44,5 +53,5 @@ async def troubleshoot(
                 {"detail": str(e), "execution": e.execution}, status_code=e.status
             )
         # Sessions can expire or be logged out while a slow provider request runs.
-        current_user(request, db)
+        await run_in_threadpool(current_user, request, db)
         return result

@@ -16,6 +16,10 @@ def main():
     parser.add_argument("--role", choices=["technician", "supervisor"])
     args = parser.parse_args()
     settings = Settings()
+    if settings.storage_backend != "sqlite":
+        parser.error(
+            "Phase 2 PostgreSQL provisioning uses the explicit local synthetic bootstrap; SQLite was not opened"
+        )
     initialize(settings.database_path, settings.seed_synthetic)
     if args.command == "create-user":
         if not all((args.username, args.name, args.role)):

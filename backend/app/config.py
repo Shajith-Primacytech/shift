@@ -9,6 +9,8 @@ class Settings(BaseSettings):
         env_prefix="SHIFT_", env_file=".env", extra="ignore"
     )
     environment: Literal["development", "test", "production"] = "development"
+    # PostgreSQL is an opt-in local development path; SQLite remains unchanged.
+    storage_backend: Literal["sqlite", "postgres"] = "sqlite"
     database_path: str = "data/shift.sqlite3"
     seed_synthetic: bool = True
     session_hours: int = 12

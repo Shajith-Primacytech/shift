@@ -1,7 +1,6 @@
 """Authenticated local-only speech endpoint. Audio is not inserted into knowledge."""
 
 import asyncio
-import sqlite3
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
@@ -31,7 +30,7 @@ async def transcribe(
     request: Request,
     file: Annotated[UploadFile, File()],
     user: Annotated[dict, Depends(current_user, scope="function")],
-    db: Annotated[sqlite3.Connection, Depends(database, scope="function")],
+    db: Annotated[object, Depends(database, scope="function")],
     service: Annotated[LocalSpeech, Depends(speech_service)],
 ):
     if not (file.content_type or "").startswith("audio/"):
@@ -53,5 +52,5 @@ async def transcribe(
             result = await run_in_threadpool(service.transcribe, data)
         except SpeechFailure as exc:
             raise HTTPException(exc.status, str(exc)) from None
-        current_user(request, db)
+        await run_in_threadpool(current_user, request, db)
         return result

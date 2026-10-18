@@ -42,6 +42,8 @@ def fingerprint(row):
 
 def valid_evidence(path, machine_id, nodes):
     """Fresh database checks; cached approval flags are never trusted."""
+    if getattr(path, "backend", None) == "postgres":
+        return path.valid_evidence(machine_id, nodes)
     with connect(path) as db:
         for scored in nodes:
             node = scored.node

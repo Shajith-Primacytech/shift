@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 
 from app.api.ai import router as ai_router
 from app.api.capture import router as capture_router
@@ -12,6 +13,7 @@ from app.api.storage import router as storage_router
 from app.api.troubleshooting import router as troubleshooting_router
 from app.config import Settings
 from app.storage.database import initialize
+from app.storage.backend import StorageUnavailable, open_postgres
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -19,8 +21,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app):
-        initialize(settings.database_path, settings.seed_synthetic)
-        yield
+        if settings.storage_backend == "postgres":
+            store = await run_in_threadpool(open_postgres, settings)
+            app.state.storage = store
+            try:
+                await run_in_threadpool(store.validate)
+                yield
+            finally:
+                await run_in_threadpool(store.close)
+        else:
+            initialize(settings.database_path, settings.seed_synthetic)
+            yield
 
     app = FastAPI(
         title="SHIFT API",
@@ -29,6 +40,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.settings = settings
+
+    @app.exception_handler(StorageUnavailable)
+    async def storage_unavailable(request, exc):
+        return JSONResponse(
+            {"detail": "Storage is temporarily unavailable. Retry shortly."},
+            status_code=503,
+        )
 
     @app.middleware("http")
     async def request_security(request: Request, call_next):

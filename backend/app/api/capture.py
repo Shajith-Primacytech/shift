@@ -3,7 +3,6 @@
 import asyncio
 import json
 import secrets
-import sqlite3
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
@@ -11,6 +10,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from app.api.storage import current_user, database
+from app.storage.backend import is_postgres
+from starlette.concurrency import run_in_threadpool
 from app.capture.service import MODEL, PROVIDER, CaptureService
 from app.storage.capture_schema import SubmissionFields
 from app.storage.security import now
@@ -27,12 +28,17 @@ async def structure_capture(
     body: SubmissionFields,
     request: Request,
     user: Annotated[dict, Depends(current_user, scope="function")],
-    db: Annotated[sqlite3.Connection, Depends(database, scope="function")],
+    db: Annotated[object, Depends(database, scope="function")],
     service: Annotated[CaptureService, Depends(capture_service)],
 ):
-    if not db.execute(
-        "SELECT 1 FROM machines WHERE id=?", (body.machineId,)
-    ).fetchone():
+    exists = (
+        (await run_in_threadpool(db.machine_exists, body.machineId))
+        if is_postgres(db)
+        else db.execute(
+            "SELECT 1 FROM machines WHERE id=?", (body.machineId,)
+        ).fetchone()
+    )
+    if not exists:
         raise HTTPException(422, "Unknown machine")
     if not hasattr(request.app.state, "capture_request_lock"):
         request.app.state.capture_request_lock = asyncio.Lock()
@@ -42,6 +48,12 @@ async def structure_capture(
             429, "Another structuring request is running. Manual capture is available."
         )
     async with lock:
+        if is_postgres(db):
+            run_id = await run_in_threadpool(db.capture_receipt, body, user)
+            result, status = await service.structure(body)
+            await run_in_threadpool(db.capture_result, run_id, result)
+            await run_in_threadpool(current_user, request, db)
+            return JSONResponse({"runId": run_id, **result}, status_code=status)
         db.execute("BEGIN IMMEDIATE")
         cutoff = (datetime.now(UTC) - timedelta(seconds=30)).isoformat()
         if db.execute(

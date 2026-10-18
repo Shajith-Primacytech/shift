@@ -16,6 +16,20 @@ def main():
         token=False,
     )
     settings = Settings()
+    if settings.storage_backend == "postgres":
+        from app.storage.backend import open_postgres
+        from app.rag.postgres import PostgresRetriever
+
+        store = open_postgres(settings)
+        try:
+            store.validate()
+            model = local_model()
+            for machine in store.machines():
+                PostgresRetriever(store, machine["id"], embed_model=model)._sync(model)
+        finally:
+            store.close()
+        print("Local PostgreSQL approved-record index prepared; no AMD calls made.")
+        return
     initialize(settings.database_path, settings.seed_synthetic)
     model = local_model()
     with connect(settings.database_path) as db:

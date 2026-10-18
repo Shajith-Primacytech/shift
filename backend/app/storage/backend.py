@@ -10,9 +10,10 @@ def is_postgres(value):
 
 
 def open_postgres(settings):
-    # Keep Phase 2 away from production even if a selector is set accidentally.
-    if settings.environment == "production":
-        raise StorageUnavailable("PostgreSQL Phase 2 is local development only")
     from app.storage.postgres import PostgresSettings, PostgresStore
 
-    return PostgresStore(PostgresSettings())
+    try:
+        config = PostgresSettings()
+    except ValueError:
+        raise StorageUnavailable("Invalid PostgreSQL configuration") from None
+    return PostgresStore(config, production=settings.environment == "production")

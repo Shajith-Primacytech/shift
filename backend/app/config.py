@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -9,7 +9,7 @@ class Settings(BaseSettings):
         env_prefix="SHIFT_", env_file=".env", extra="ignore"
     )
     environment: Literal["development", "test", "production"] = "development"
-    # PostgreSQL is an opt-in local development path; SQLite remains unchanged.
+    # PostgreSQL requires explicit opt-in; SQLite remains the default.
     storage_backend: Literal["sqlite", "postgres"] = "sqlite"
     database_path: str = "data/shift.sqlite3"
     seed_synthetic: bool = True
@@ -26,6 +26,32 @@ class Settings(BaseSettings):
             if origin.endswith("/"):
                 raise ValueError("Origins must not have a trailing slash")
         return origins
+
+    @model_validator(mode="after")
+    def production_postgres(self):
+        if self.environment == "production" and self.storage_backend == "postgres":
+            from urllib.parse import urlsplit
+
+            if self.seed_synthetic or not self.cors_origins:
+                raise ValueError(
+                    "Production PostgreSQL requires seed_synthetic=false and HTTPS origins"
+                )
+            for origin in self.cors_origins:
+                url = urlsplit(origin)
+                if (
+                    url.scheme != "https"
+                    or not url.hostname
+                    or url.username
+                    or url.password
+                    or url.path
+                    or url.query
+                    or url.fragment
+                    or url.hostname in ("localhost", "127.0.0.1", "::1")
+                ):
+                    raise ValueError(
+                        "Production requires explicit HTTPS frontend origins"
+                    )
+        return self
 
 
 class AMDSettings(BaseSettings):

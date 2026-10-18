@@ -1,6 +1,6 @@
 """Opt-in PostgreSQL repository; explicit SQL, short units, no SQLite SQL shim.
 
-Phase 2 permits only loopback development databases. The API runtime never
+Remote deployments require explicit targets and verified TLS. The API runtime never
 creates schemas, seeds data, provisions users or owns its tables.
 """
 
@@ -10,18 +10,44 @@ import secrets
 import time
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
-
-from fastapi import HTTPException
-from pydantic import Field, SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pathlib import Path
+from typing import Literal
 
 from app.storage.backend import StorageUnavailable
 from app.storage.capture_schema import SubmissionFields, mapped_submission
 from app.storage.security import now, token_hash, verify_password
+from fastapi import HTTPException
+from pydantic import Field, SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 SCHEMA = "shift_private"
 LATEST = "v.revision=(SELECT MAX(v2.revision) FROM shift_private.knowledge_versions v2 WHERE v2.record_id=v.record_id)"
 ELIGIBLE = f"v.status='Approved' AND {LATEST}"
+
+
+# Effective privileges checked at startup, including inherited/PUBLIC grants.
+TABLE_GRANTS = {
+    "schema_migrations": set(),
+    "users": {"SELECT"},
+    "machines": {"SELECT"},
+    "sessions": {"SELECT", "INSERT", "DELETE"},
+    "login_attempts": {"SELECT", "INSERT", "DELETE"},
+    "knowledge_records": {"SELECT", "INSERT"},
+    "knowledge_versions": {"SELECT", "INSERT"},
+    "review_events": {"SELECT", "INSERT"},
+    "source_documents": {"SELECT", "INSERT"},
+    "knowledge_chunks": {"SELECT", "INSERT", "DELETE"},
+    "chunk_embeddings": {"SELECT", "INSERT", "DELETE"},
+    "rag_generations": {"SELECT", "INSERT"},
+    "capture_ai_runs": {"SELECT", "INSERT"},
+    "conversations": set(),
+    "conversation_messages": set(),
+}
+UPDATE_COLUMNS = {
+    "knowledge_versions": {"status"},
+    "rag_generations": {"fingerprint", "embedding_key"},
+    "capture_ai_runs": {"proposal", "execution", "version_id", "reviewed_structure"},
+}
 
 
 class PostgresSettings(BaseSettings):
@@ -30,6 +56,9 @@ class PostgresSettings(BaseSettings):
         env_prefix="SHIFT_POSTGRES_", env_file=None, hide_input_in_errors=True
     )
     dsn: SecretStr = Field(repr=False, exclude=True)
+    mode: Literal["local", "direct", "session"] = "local"
+    expected_host: str = ""
+    sslrootcert: str = ""
     pool_max: int = Field(default=4, ge=1, le=4)
     connect_timeout: int = Field(default=5, ge=1, le=10)
 
@@ -40,7 +69,7 @@ def local_connection_parameters(dsn):
 
     try:
         params = conninfo_to_dict(dsn)
-    except Exception:
+    except Exception:  # noqa: BLE001 -- parser/CA diagnostics must not expose DSNs
         raise StorageUnavailable("Invalid local PostgreSQL configuration") from None
     allowed = {"host", "port", "dbname", "user", "password", "sslmode"}
     if (
@@ -67,20 +96,81 @@ def local_connection_parameters(dsn):
     return params
 
 
+def connection_parameters(settings, *, production=False):
+    """Allow only an explicit direct/session target; never inherit libpq options."""
+    from psycopg.conninfo import conninfo_to_dict
+
+    if settings.mode == "local":
+        if production:
+            raise StorageUnavailable("Production requires verified remote PostgreSQL")
+        return local_connection_parameters(settings.dsn.get_secret_value())
+    try:
+        import os
+
+        if any(key.startswith("PG") for key in os.environ):
+            raise ValueError("Ambient libpq configuration is forbidden")
+        params = conninfo_to_dict(settings.dsn.get_secret_value())
+        allowed = {"host", "port", "dbname", "user", "password", "sslmode"}
+        host = params.get("host", "")
+        user = params.get("user", "")
+        if (
+            set(params) - allowed
+            or not re.fullmatch(r"[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?", host)
+            or "." not in host
+            or host.replace(".", "").isdigit()
+            or host.endswith(".localhost")
+            or host != settings.expected_host
+            or params.get("port") != "5432"
+            or not params.get("dbname")
+            or not params.get("password")
+            or params.get("sslmode") != "verify-full"
+            or (settings.mode == "direct" and user != "shift_runtime")
+            or (
+                settings.mode == "session"
+                and not re.fullmatch(r"shift_runtime\.[a-z0-9]+", user)
+            )
+        ):
+            raise ValueError
+        cert = Path(settings.sslrootcert)
+        if not cert.is_absolute() or not cert.is_file():
+            raise ValueError
+        # Parse trust material now; do not defer a missing/invalid CA to pool retries.
+        import ssl
+
+        ssl.create_default_context(cafile=str(cert))
+    except Exception:  # noqa: BLE001 -- parser/CA diagnostics must not expose DSNs
+        raise StorageUnavailable("Invalid verified PostgreSQL configuration") from None
+    params.update(
+        sslmode="verify-full",
+        sslrootcert=str(cert),
+        ssl_min_protocol_version="TLSv1.2",
+        sslcert="",
+        sslkey="",
+        sslcrl="",
+        sslcrldir="",
+        gssencmode="disable",
+        passfile="/dev/null",
+        options="",
+        target_session_attrs="read-write",
+        channel_binding="prefer",
+    )
+    return params
+
+
 class PostgresStore:
     backend = "postgres"
 
-    def __init__(self, settings):
+    def __init__(self, settings, *, production=False):
         import psycopg
         from pgvector.psycopg import register_vector
         from psycopg.rows import dict_row
         from psycopg_pool import ConnectionPool
 
         self._settings = settings
-        params = local_connection_parameters(settings.dsn.get_secret_value())
+        params = connection_parameters(settings, production=production)
         params.update(
             connect_timeout=settings.connect_timeout,
-            application_name="shift-phase2",
+            application_name="shift-api",
             autocommit=True,
             row_factory=dict_row,
             prepare_threshold=None,
@@ -92,7 +182,26 @@ class PostgresStore:
             conn.execute("SET statement_timeout TO '10s'")
             conn.execute("SET lock_timeout TO '2s'")
             conn.execute("SET idle_in_transaction_session_timeout TO '10s'")
+            if settings.mode != "local" and not conn.pgconn.ssl_in_use:
+                raise StorageUnavailable("Verified PostgreSQL TLS is required")
             register_vector(conn)
+
+        # Pool diagnostics can contain server-supplied text. Keep connection failures
+        # inside the redacted StorageUnavailable boundary (including background retries).
+        import logging
+
+        class RedactPoolErrors(logging.Filter):
+            def filter(self, record):
+                if record.levelno >= logging.WARNING:
+                    record.msg, record.args = "PostgreSQL pool unavailable", ()
+                    record.exc_info = None
+                return True
+
+        logger = logging.getLogger("psycopg.pool")
+        if not any(getattr(f, "shift_redactor", False) for f in logger.filters):
+            redactor = RedactPoolErrors()
+            redactor.shift_redactor = True
+            logger.addFilter(redactor)
 
         self.pool = ConnectionPool(
             kwargs=params,
@@ -102,7 +211,7 @@ class PostgresStore:
             max_waiting=16,
             configure=configure,
             open=False,
-            name="shift-phase2",
+            name="shift-api",
         )
         self.pool.open()
         self._driver_error = psycopg.Error
@@ -144,6 +253,63 @@ class PostgresStore:
                 raise StorageUnavailable(
                     "PostgreSQL requires the restricted runtime role"
                 )
+            if conn.execute(
+                "SELECT 1 FROM pg_auth_members WHERE member=(SELECT oid FROM pg_roles WHERE rolname=current_user) LIMIT 1"
+            ).fetchone():
+                raise StorageUnavailable(
+                    "Runtime must not inherit other database roles"
+                )
+            tables = conn.execute(
+                "SELECT c.relname,c.relrowsecurity,pg_get_userbyid(c.relowner) AS owner FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='shift_private' AND c.relkind='r'"
+            ).fetchall()
+            if {t["relname"] for t in tables} != set(TABLE_GRANTS) or any(
+                not t["relrowsecurity"] or t["owner"] != "shift_owner" for t in tables
+            ):
+                raise StorageUnavailable(
+                    "Private table ownership or RLS is incompatible"
+                )
+            for role in ("anon", "authenticated", "service_role", "authenticator"):
+                if (
+                    conn.execute(
+                        "SELECT 1 FROM pg_roles WHERE rolname=%s", (role,)
+                    ).fetchone()
+                    and conn.execute(
+                        "SELECT has_schema_privilege(%s,'shift_private','USAGE') AS allowed",
+                        (role,),
+                    ).fetchone()["allowed"]
+                ):
+                    raise StorageUnavailable("Private schema is exposed to an API role")
+            privileges = conn.execute(
+                "SELECT c.relname,p.action,has_table_privilege(current_user,c.oid,p.action) AS allowed FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER']) p(action) WHERE n.nspname='shift_private' AND c.relkind='r'"
+            ).fetchall()
+            if any(
+                p["allowed"] != (p["action"] in TABLE_GRANTS[p["relname"]])
+                for p in privileges
+            ):
+                raise StorageUnavailable(
+                    "Runtime table privileges differ from the reviewed grants"
+                )
+            columns = conn.execute(
+                "SELECT c.relname,a.attname,has_column_privilege(current_user,c.oid,a.attnum,'UPDATE') AS allowed FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace JOIN pg_attribute a ON a.attrelid=c.oid WHERE n.nspname='shift_private' AND c.relkind='r' AND a.attnum>0 AND NOT a.attisdropped"
+            ).fetchall()
+            if any(
+                c["allowed"]
+                != (c["attname"] in UPDATE_COLUMNS.get(c["relname"], set()))
+                for c in columns
+            ):
+                raise StorageUnavailable(
+                    "Runtime column privileges differ from the reviewed grants"
+                )
+            if conn.execute(
+                "SELECT has_database_privilege(current_user,current_database(),'CREATE') AS allowed"
+            ).fetchone()["allowed"] or any(
+                conn.execute(
+                    "SELECT has_schema_privilege(current_user,%s,'CREATE') AS allowed",
+                    (schema,),
+                ).fetchone()["allowed"]
+                for schema in ("public", "extensions", "shift_private")
+            ):
+                raise StorageUnavailable("Runtime must not create database objects")
             # Validate accessible table shape; startup never runs DDL or seeding.
             conn.execute(
                 "SELECT id, username, password_hash, role FROM shift_private.users LIMIT 0"
@@ -157,10 +323,6 @@ class PostgresStore:
             conn.execute(
                 "SELECT search_vector FROM shift_private.knowledge_chunks LIMIT 0"
             )
-            if conn.execute(
-                "SELECT has_schema_privilege(current_user, 'shift_private', 'CREATE') AS allowed"
-            ).fetchone()["allowed"]:
-                raise StorageUnavailable("Runtime must not create schema objects")
 
     @staticmethod
     def lock(conn, namespace, key):
@@ -492,8 +654,8 @@ class PostgresStore:
             ).fetchone()
 
     def capture_receipt(self, body, user):
-        from psycopg.types.json import Jsonb
         from app.capture.service import MODEL, PROVIDER
+        from psycopg.types.json import Jsonb
 
         with self.connection(transaction=True) as conn:
             self.lock(conn, "capture", user["id"])

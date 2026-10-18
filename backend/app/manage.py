@@ -18,7 +18,7 @@ def main():
     settings = Settings()
     if settings.storage_backend != "sqlite":
         parser.error(
-            "Phase 2 PostgreSQL provisioning uses the explicit local synthetic bootstrap; SQLite was not opened"
+            "PostgreSQL provisioning is an explicit administrative procedure; see docs/HACKATHON_DEPLOYMENT.md. SQLite was not opened"
         )
     initialize(settings.database_path, settings.seed_synthetic)
     if args.command == "create-user":

@@ -5,7 +5,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from app.config import Settings
 from app.storage.backend import StorageUnavailable, open_postgres
 
@@ -13,7 +12,8 @@ from app.storage.backend import StorageUnavailable, open_postgres
 def test_sqlite_default_does_not_import_postgres_driver(tmp_path):
     backend = Path(__file__).resolve().parents[1]
     result = subprocess.run(
-        [
+        check=False,
+        args=[
             sys.executable,
             "-c",
             "from app.main import create_app; from app.config import Settings; import sys; assert Settings(_env_file=None).storage_backend == 'sqlite'; assert 'psycopg' not in sys.modules",
@@ -26,11 +26,19 @@ def test_sqlite_default_does_not_import_postgres_driver(tmp_path):
     assert result.returncode == 0, result.stderr
 
 
-def test_postgres_production_path_is_disabled_before_connecting():
-    with pytest.raises(StorageUnavailable, match="local development only"):
+def test_production_cannot_use_local_postgres(monkeypatch):
+    monkeypatch.setenv(
+        "SHIFT_POSTGRES_DSN",
+        "host=127.0.0.1 dbname=shift_test_fixture user=shift_runtime password=synthetic",
+    )
+    with pytest.raises(StorageUnavailable, match="verified remote"):
         open_postgres(
             Settings(
-                _env_file=None, environment="production", storage_backend="postgres"
+                _env_file=None,
+                environment="production",
+                storage_backend="postgres",
+                seed_synthetic=False,
+                cors_origins=["https://shift.example.com"],
             )
         )
 

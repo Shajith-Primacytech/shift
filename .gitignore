@@ -44,3 +44,6 @@ backend/data/
 frontend/next-env.d.ts
 .ruff_cache/
 *.log
+
+# Offline production account artifacts contain password hashes
+*.provision.sql

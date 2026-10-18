@@ -1,3 +1,11 @@
+# PostgreSQL adapter
+
+For the separate reviewed remote-deployment path, see
+[the hackathon deployment runbook](../../docs/HACKATHON_DEPLOYMENT.md).
+Its production SQL lives under `production/supabase/migrations/`. Nothing has
+been applied to hosted Supabase. The Phase 2 instructions below describe only
+the original local bootstrap, which remains guarded and unchanged.
+
 # PostgreSQL Phase 2: local development only
 
 SQLite is still the default. This directory is **not a live Supabase deployment**.
@@ -8,7 +16,7 @@ See [the implementation report](../../docs/POSTGRES_PHASE2_REPORT.md) for result
 
 - PostgreSQL requires explicit `SHIFT_STORAGE_BACKEND=postgres` and a separate
   environment-only `SHIFT_POSTGRES_DSN`. The PostgreSQL settings class never reads `.env`.
-- Phase 2 rejects `SHIFT_ENVIRONMENT=production`, all remote addresses, implicit
+- Local mode rejects `SHIFT_ENVIRONMENT=production`, all remote addresses, implicit
   libpq services/passfiles/options, and databases not named `shift_test_*` or `shift_dev_*`.
 - Only explicit loopback IPs/localhost are accepted and the IP address is pinned.
   This development connection deliberately uses a loopback-only database; hosted

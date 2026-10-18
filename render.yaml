@@ -1,0 +1,36 @@
+# Prepared only. Creating this service publicly requires separate approval.
+services:
+  - type: web
+    name: shift-hackathon-api
+    runtime: docker
+    branch: codex/hackathon-postgres-deployment
+    plan: free
+    region: singapore
+    dockerContext: ./backend
+    dockerfilePath: ./backend/Dockerfile.hackathon
+    autoDeployTrigger: "off"
+    healthCheckPath: /api/v1/ready
+    maxShutdownDelaySeconds: 30
+    envVars:
+      - key: SHIFT_ENVIRONMENT
+        value: production
+      - key: SHIFT_STORAGE_BACKEND
+        value: postgres
+      - key: SHIFT_SEED_SYNTHETIC
+        value: "false"
+      - key: SHIFT_POSTGRES_MODE
+        value: session
+      - key: SHIFT_POSTGRES_POOL_MAX
+        value: "2"
+      - key: SHIFT_POSTGRES_CONNECT_TIMEOUT
+        value: "5"
+      - key: SHIFT_POSTGRES_SSLROOTCERT
+        value: /etc/secrets/supabase-ca.crt
+      - key: SHIFT_POSTGRES_EXPECTED_HOST
+        sync: false
+      - key: SHIFT_POSTGRES_DSN
+        sync: false
+      - key: SHIFT_CORS_ORIGINS
+        sync: false
+      - key: AMD_API_KEY
+        sync: false

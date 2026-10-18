@@ -1,6 +1,6 @@
 """Provider-independent text completion contracts. No retrieval or HTTP objects."""
 
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -11,10 +11,17 @@ class Message(BaseModel):
     content: str = Field(min_length=1, max_length=32000)
 
 
+class StructuredOutput(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    type: Literal["json_schema"] = "json_schema"
+    json_schema: dict[str, Any]
+
+
 class CompletionRequest(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     messages: tuple[Message, ...] = Field(min_length=1, max_length=32)
     max_tokens: int = Field(default=512, ge=1, le=4096, strict=True)
+    response_format: StructuredOutput | None = None
 
 
 class TokenUsage(BaseModel):
@@ -69,11 +76,13 @@ class InferenceError(Exception):
         status: int | None = None,
         attempts: int = 0,
         latency_ms: float = 0,
+        usage: TokenUsage | None = None,
     ):
         self.code = code
         self.status = status
         self.attempts = attempts
         self.latency_ms = latency_ms
+        self.usage = usage
         super().__init__(MESSAGES[code])
 
 

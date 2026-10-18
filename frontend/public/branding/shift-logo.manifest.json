@@ -1,0 +1,23 @@
+{
+  "width": 1264,
+  "height": 168,
+  "variants": {
+    "dark": "/branding/shift-logo.svg",
+    "light": "/branding/shift-logo-light.svg"
+  },
+  "source": {
+    "file": "shift-reference.png",
+    "sha256": "e3acb507d46691b3f69bed7c78caddca5f038e2381dff055a86fe10b5ec4a3d5",
+    "width": 2098,
+    "height": 749,
+    "transparent": false
+  },
+  "conversion": {
+    "method": "Source-pixel contour trace; no generated typography",
+    "threshold": 110.5,
+    "simplification_pixels": 0.2,
+    "clear_space_pixels": 16,
+    "letter_contours": 5,
+    "silhouette_overlap": 0.9946153405510684
+  }
+}

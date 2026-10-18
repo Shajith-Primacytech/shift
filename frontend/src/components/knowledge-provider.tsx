@@ -18,7 +18,7 @@ import {
   type NewKnowledge,
   type User,
 } from "@/lib/api";
-import { ShiftBrand } from "./shift-brand";
+import { ShiftLogo } from "./shift-logo";
 
 type KnowledgeContextValue = {
   user: User;
@@ -160,8 +160,9 @@ export function KnowledgeProvider({ children }: { children: ReactNode }) {
       <main className="auth-page">
         <form className="panel auth-card" onSubmit={signIn}>
           <div className="brand">
-            <ShiftBrand />
+            <ShiftLogo />
           </div>
+          <p className="brand-tagline">The Memory of the Factory Floor</p>
           <h1>Welcome to your shift.</h1>
           <p className="muted">
             Sign in to capture knowledge and review approved sources. All

@@ -1,0 +1,44 @@
+name: SHIFT validation
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Audit public source and full Git history
+        run: |
+          curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz -o /tmp/gitleaks_8.30.1_linux_x64.tar.gz
+          curl -fsSL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_checksums.txt -o /tmp/gitleaks_checksums.txt
+          (cd /tmp && sha256sum --check --ignore-missing gitleaks_checksums.txt)
+          tar -xzf /tmp/gitleaks_8.30.1_linux_x64.tar.gz -C /tmp gitleaks
+          python3 scripts/prepare_public_source.py --output "$RUNNER_TEMP/shift-public-source"
+          python3 scripts/audit_release.py --source "$RUNNER_TEMP/shift-public-source" --gitleaks /tmp/gitleaks --report "$RUNNER_TEMP/shift-secret-audit.json"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.11.21'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Backend tests (no live AI)
+        working-directory: backend
+        run: |
+          uv sync --locked
+          uv run --no-sync pytest -q
+      - name: Frontend validation
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run lint
+          npm run typecheck
+          npm run build
+          npx playwright install --with-deps chromium
+          npm run test:e2e

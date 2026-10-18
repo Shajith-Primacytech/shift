@@ -1,0 +1,41 @@
+{
+  "tested_at": "2026-10-18T05:19:05.949898+00:00",
+  "mode": "local real services, isolated synthetic database",
+  "live_gemma_calls": 1,
+  "whisper": {
+    "http_status": 200,
+    "provider": "Local CPU \u00b7 faster-whisper",
+    "model": "Systran/faster-whisper-tiny.en",
+    "latency_ms": 1154.7,
+    "duration_seconds": 5.66,
+    "language": "en",
+    "transcript_nonempty": true
+  },
+  "gemma": {
+    "http_status": 200,
+    "execution": {
+      "provider": "AMD Token Factory",
+      "requested_model": "Gemma-4-31B-IT",
+      "model_id": "self-dploy/Gemma-4-31B-IT",
+      "returned_model": "self-dploy/Gemma-4-31B-IT",
+      "requested_at": "2026-10-18T05:19:07.242633+00:00",
+      "latency_ms": 10457.2,
+      "usage": {
+        "prompt_tokens": 295,
+        "completion_tokens": 168,
+        "total_tokens": 463,
+        "reasoning_tokens": 0
+      },
+      "status": "success",
+      "http_status": 200,
+      "error_code": null
+    },
+    "unconfirmed_root_cause_blank": true
+  },
+  "approval_gating": {
+    "pending_on_submit": true,
+    "technician_approval_denied": true,
+    "supervisor_approval_succeeds": true,
+    "pending_and_revoked_excluded": true
+  }
+}

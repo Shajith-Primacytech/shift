@@ -1,0 +1,22 @@
+services:
+  api:
+    build: ../backend
+    restart: unless-stopped
+    env_file:
+      - ../backend/.env
+    environment:
+      SHIFT_ENVIRONMENT: production
+      SHIFT_DATABASE_PATH: /data/shift.sqlite3
+      SHIFT_SPEECH_MODEL_PATH: /opt/models/whisper
+      SHIFT_SEED_SYNTHETIC: "true"
+      SHIFT_CORS_ORIGINS: ${SHIFT_PUBLIC_ORIGINS:?Set SHIFT_PUBLIC_ORIGINS to a JSON array of exact HTTPS frontend origins}
+    volumes:
+      - shift-data:/data
+    ports:
+      - "127.0.0.1:8000:8000"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+volumes:
+  shift-data:

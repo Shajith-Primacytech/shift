@@ -135,7 +135,7 @@ export default function Dashboard() {
         <section className="panel floor-panel">
           <div className="section-heading">
             <h2>Factory at a glance</h2>
-            <Badge tone="blue">Demo</Badge>
+            <Badge tone="info">Demo</Badge>
           </div>
           <p className="muted small-text">
             A snapshot of your production floor.
@@ -285,7 +285,7 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="timeline-item">
-            <span className="timeline-icon blue">
+            <span className="timeline-icon info">
               <Clock3 size={15} />
             </span>
             <div>
@@ -337,7 +337,9 @@ function Stat({
       <div className="stat-value">
         {value}
         <span
-          className={green ? "green-text" : amber ? "amber-text" : "blue-text"}
+          className={
+            green ? "green-text" : amber ? "amber-text" : "accent-text"
+          }
         >
           {green ? "● Operational" : amber ? "Review queue" : ""}
         </span>

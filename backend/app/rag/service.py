@@ -9,6 +9,7 @@ from starlette.concurrency import run_in_threadpool
 from app.inference.amd import configured_amd
 from app.inference.contracts import CompletionRequest, InferenceError, Message
 from app.rag.retrieval import ApprovedRetriever, QueryTooLong, valid_evidence
+from app.storage.security import now
 
 UNCERTAINTY = "Synthetic maintenance evidence only. This is not a confirmed diagnosis or authorization to operate equipment. A qualified technician must follow approved site procedures."
 INSUFFICIENT = "Insufficient approved evidence for this machine and question. Capture the observation for supervisor review; no maintenance answer was generated."
@@ -33,9 +34,10 @@ class Selection(BaseModel):
 
 
 class RagFailure(Exception):
-    def __init__(self, code, message, status=503):
+    def __init__(self, code, message, status=503, execution=None):
         self.code = code
         self.status = status
+        self.execution = execution
         super().__init__(message)
 
 
@@ -119,6 +121,17 @@ Select 1–4 relevant passages, in a helpful order. Include the supplied safety 
                 "approved_evidence": evidence,
             }
         )
+        execution = {
+            "provider": "AMD Token Factory",
+            "requested_model": None,
+            "returned_model": None,
+            "requested_at": now(),
+            "latency_ms": None,
+            "usage": None,
+            "status": "failure",
+            "http_status": None,
+            "error_code": None,
+        }
         try:
             provider = self.provider or configured_amd()
             completion = await provider.complete(
@@ -131,9 +144,29 @@ Select 1–4 relevant passages, in a helpful order. Include the supplied safety 
                 )
             )
         except InferenceError as e:
+            execution.update(
+                latency_ms=round(e.latency_ms, 1),
+                http_status=e.status,
+                error_code=e.code,
+                usage=e.usage.model_dump() if e.usage else None,
+            )
             raise RagFailure(
-                "provider_" + e.code, str(e), 504 if e.code == "timeout" else 503
+                "provider_" + e.code,
+                str(e),
+                504 if e.code == "timeout" else 503,
+                execution=execution,
             ) from None
+        execution.update(
+            provider="AMD Token Factory"
+            if completion.provider == "amd"
+            else completion.provider,
+            requested_model=completion.requested_model,
+            returned_model=completion.model,
+            latency_ms=round(completion.latency_ms, 1),
+            usage=completion.usage.model_dump(),
+            status="success",
+            http_status=200,
+        )
         raw = completion.text.strip()
         if raw.startswith("```json") and raw.endswith("```"):
             raw = raw[7:-3].strip()
@@ -144,14 +177,24 @@ Select 1–4 relevant passages, in a helpful order. Include the supplied safety 
                 "invalid_answer",
                 "The model response could not be verified against approved evidence. No answer was displayed.",
                 502,
+                execution={
+                    **execution,
+                    "status": "failure",
+                    "error_code": "unverified_response",
+                },
             ) from None
         if not selected.sufficient:
-            return self.empty()
+            return {**self.empty(), "execution": execution}
         if not selected.steps:
             raise RagFailure(
                 "invalid_answer",
                 "The model returned no verifiable supporting passages.",
                 502,
+                execution={
+                    **execution,
+                    "status": "failure",
+                    "error_code": "unverified_response",
+                },
             )
         lookup = {n.node.node_id: n.node for n in nodes}
         citations = {}
@@ -179,6 +222,11 @@ Select 1–4 relevant passages, in a helpful order. Include the supplied safety 
                     "invalid_citation",
                     "A citation or passage did not match retrieved evidence. No answer was displayed.",
                     502,
+                    execution={
+                        **execution,
+                        "status": "failure",
+                        "error_code": "unverified_response",
+                    },
                 )
             if any(s["text"] == text for s in steps):
                 continue
@@ -205,7 +253,8 @@ Select 1–4 relevant passages, in a helpful order. Include the supplied safety 
             "citations": list(citations.values()),
             "uncertainty": UNCERTAINTY,
             "retrieval_mode": "hybrid",
-            "model": completion.model or completion.requested_model,
+            "model": completion.model,
+            "execution": execution,
             "latency_ms": round(completion.latency_ms, 1),
             "usage": completion.usage.model_dump(),
         }
@@ -221,6 +270,7 @@ Select 1–4 relevant passages, in a helpful order. Include the supplied safety 
             "uncertainty": UNCERTAINTY,
             "retrieval_mode": "hybrid",
             "model": None,
+            "execution": None,
             "latency_ms": None,
             "usage": None,
         }

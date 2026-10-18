@@ -2,6 +2,8 @@
 import Link from "next/link";
 import { BookOpen, ShieldCheck, Sparkles } from "lucide-react";
 import type { TroubleshootingAnswer } from "@/lib/api";
+import type { AIExecution } from "@/lib/ai-models";
+import { AIModelIndicator } from "./ai-model-indicator";
 import { EmptyState } from "./ui";
 
 export function GroundedAnswer({
@@ -9,11 +11,13 @@ export function GroundedAnswer({
   loading,
   error,
   retry,
+  failureExecution,
 }: {
   answer: TroubleshootingAnswer | null;
   loading: boolean;
   error: string;
   retry: () => void;
+  failureExecution?: AIExecution | null;
 }) {
   if (loading)
     return (
@@ -32,6 +36,12 @@ export function GroundedAnswer({
           {error}
         </p>
         <p>No maintenance answer was displayed.</p>
+        {failureExecution && (
+          <AIModelIndicator
+            execution={failureExecution}
+            label="Troubleshooting evidence selection"
+          />
+        )}
         <button className="button secondary" onClick={retry}>
           Retry troubleshooting
         </button>
@@ -40,9 +50,21 @@ export function GroundedAnswer({
   if (!answer) return null;
   if (answer.status === "insufficient_evidence")
     return (
-      <EmptyState icon={BookOpen} title="Insufficient approved evidence">
-        {answer.message}
-      </EmptyState>
+      <>
+        <EmptyState icon={BookOpen} title="Insufficient approved evidence">
+          {answer.message}
+        </EmptyState>
+        {answer.execution ? (
+          <AIModelIndicator
+            execution={answer.execution}
+            label="Troubleshooting evidence selection"
+          />
+        ) : (
+          <p className="small-text muted">
+            No model execution for this response.
+          </p>
+        )}
+      </>
     );
   return (
     <>
@@ -53,6 +75,16 @@ export function GroundedAnswer({
           <span className="resource-kind">VERIFIED QUOTES</span>
         </div>
         <p>{answer.message}</p>
+        {answer.execution ? (
+          <AIModelIndicator
+            execution={answer.execution}
+            label="Troubleshooting evidence selection"
+          />
+        ) : (
+          <p className="small-text muted">
+            Execution metadata unavailable; model attribution is not confirmed.
+          </p>
+        )}
         {answer.steps.map((step, i) => (
           <div className="hypothesis" key={`${step.citation_id}-${i}`}>
             <span>{String(i + 1).padStart(2, "0")}</span>
@@ -76,7 +108,7 @@ export function GroundedAnswer({
           <strong>Evidence coverage is limited</strong>
           <p>{answer.uncertainty}</p>
           <p className="small-text">
-            {answer.model} · Hybrid retrieval ·{" "}
+            Hybrid retrieval ·{" "}
             {answer.latency_ms == null
               ? ""
               : `${(answer.latency_ms / 1000).toFixed(1)}s inference`}{" "}

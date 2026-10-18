@@ -13,7 +13,7 @@ export function Badge({
   tone = "neutral",
 }: {
   children: ReactNode;
-  tone?: "green" | "amber" | "blue" | "neutral" | "red";
+  tone?: "green" | "amber" | "info" | "neutral" | "red";
 }) {
   return (
     <span className={`badge ${tone}`}>
@@ -147,14 +147,21 @@ export function ChecklistItem({
   checked,
   onChange,
   children,
+  disabled = false,
 }: {
   checked: boolean;
   onChange: () => void;
+  disabled?: boolean;
   children: ReactNode;
 }) {
   return (
     <label className={`check-row ${checked ? "checked" : ""}`}>
-      <input type="checkbox" checked={checked} onChange={onChange} />
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onChange}
+        disabled={disabled}
+      />
       <span className="check-visual">{checked && <Check size={14} />}</span>
       <span>{children}</span>
     </label>

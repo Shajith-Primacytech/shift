@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     database_path: str = "data/shift.sqlite3"
     seed_synthetic: bool = True
     session_hours: int = 12
+    speech_model_path: str = "data/speech/tiny.en"
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
     @field_validator("cors_origins")

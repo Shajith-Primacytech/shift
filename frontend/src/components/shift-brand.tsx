@@ -1,8 +1,6 @@
-/** Replace this text mark to change branding without changing navigation or services. */
+import { ShiftLogo } from "./shift-logo";
+
+/** Compatibility entry point for existing brand placements. */
 export function ShiftBrand() {
-  return (
-    <span aria-label="SHIFT">
-      SHIFT<span className="brand-dot">.</span>
-    </span>
-  );
+  return <ShiftLogo variant="compact" />;
 }

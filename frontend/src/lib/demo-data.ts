@@ -1,3 +1,5 @@
+import type { SavedCapture } from "./capture-structure";
+
 export type MachineStatus = "Running" | "Attention" | "Maintenance";
 export type Machine = {
   id: string;
@@ -94,6 +96,7 @@ export type Attachment = {
   url?: string;
 };
 export type KnowledgeRecord = {
+  aiCapture?: SavedCapture | null;
   id: string;
   versionId?: string;
   revision?: number;

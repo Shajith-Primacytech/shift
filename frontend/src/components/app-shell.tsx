@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { useKnowledge } from "./knowledge-provider";
 import { ShiftBrand } from "./shift-brand";
+import { ShiftLogo } from "./shift-logo";
 import { BackendStatus } from "./backend-status";
 const nav = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
@@ -119,7 +120,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <Link href="/" className="brand" onClick={() => setOpen(false)}>
           <ShiftBrand />
         </Link>
-        <div className="workspace-label">INDUSTRIAL INTELLIGENCE</div>
+        <div className="workspace-label">INDUSTRIAL KNOWLEDGE INTELLIGENCE</div>
         <div className="plant-card">
           <span className="plant-icon">
             <Factory size={19} />
@@ -236,9 +237,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           {children}
         </main>
         <footer className="app-footer">
-          <span>
-            SHIFT <span className="muted">/</span> Knowledge that stays on the
-            floor.
+          <span className="footer-brand">
+            <ShiftLogo variant="footer" />
+            <span className="muted">/</span> The Memory of the Factory Floor
           </span>
           <BackendStatus />
         </footer>

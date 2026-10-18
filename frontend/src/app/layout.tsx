@@ -3,9 +3,9 @@ import { KnowledgeProvider } from "@/components/knowledge-provider";
 import { AppShell } from "@/components/app-shell";
 import "./globals.css";
 export const metadata: Metadata = {
-  title: "SHIFT — Industrial Intelligence",
+  title: "SHIFT — Industrial Knowledge Intelligence",
   description:
-    "Industrial knowledge that stays on the floor. Synthetic demonstration workspace.",
+    "The Memory of the Factory Floor. Synthetic demonstration workspace.",
 };
 export default function RootLayout({
   children,

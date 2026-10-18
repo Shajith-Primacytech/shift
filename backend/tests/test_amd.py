@@ -362,7 +362,7 @@ def test_invalid_bounds(overrides):
         AMDSettings(_env_file=None, **overrides)
 
 
-def test_only_grounded_troubleshooting_route_added(tmp_path):
+def test_only_scoped_inference_routes_added(tmp_path):
     from app.config import Settings
     from app.main import create_app
 
@@ -376,6 +376,10 @@ def test_only_grounded_troubleshooting_route_added(tmp_path):
     paths = set(app.openapi()["paths"])
     assert paths == {
         "/api/v1/troubleshoot",
+        "/api/v1/capture/structure",
+        "/api/v1/ai/configuration",
+        "/api/v1/capture/transcribe",
+        "/api/v1/capture/voice/status",
         "/api/v1/health",
         "/api/v1/auth/login",
         "/api/v1/auth/me",

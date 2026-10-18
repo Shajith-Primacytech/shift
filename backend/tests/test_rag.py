@@ -310,14 +310,42 @@ def test_selected_passages_preserve_source_order(config):
     expected = []
 
     def handler(request):
-        evidence = json.loads(json.loads(request.content)["messages"][1]["content"])["approved_evidence"]
+        evidence = json.loads(json.loads(request.content)["messages"][1]["content"])[
+            "approved_evidence"
+        ]
         source = evidence[0]
         chosen = source["passages"][:3]
         expected.extend(p["text"] for p in chosen)
-        return response_for({"sufficient": True, "steps": [
-            {"source_id": source["source_id"], "passage_id": p["passage_id"]}
-            for p in reversed(chosen)
-        ]})
+        return response_for(
+            {
+                "sufficient": True,
+                "steps": [
+                    {"source_id": source["source_id"], "passage_id": p["passage_id"]}
+                    for p in reversed(chosen)
+                ],
+            }
+        )
 
     result = run_answer(config, handler)
     assert [s["text"] for s in result["steps"]] == expected
+
+
+def test_model_visibility_uses_completion_metadata_without_guessing(config):
+    result = run_answer(config)
+    assert result["execution"]["provider"] == "AMD Token Factory"
+    assert result["execution"]["returned_model"] == "test-only-mocked-amd"
+    assert result["model"] == "test-only-mocked-amd"
+    assert result["execution"]["status"] == "success"
+    assert result["execution"]["requested_at"]
+    assert result["execution"]["usage"]["total_tokens"] == 40
+
+    def without_returned_model(request):
+        response = response_for(selection(request)).json()
+        del response["model"]
+        return httpx.Response(200, json=response)
+
+    missing = run_answer(config, without_returned_model)
+    assert missing["model"] is None and missing["execution"]["returned_model"] is None
+    assert missing["execution"]["requested_model"] == "DeepSeek-V4-Flash"
+    empty = run_answer(config, question="Vibration", machine="CNC-02")
+    assert empty["execution"] is None and empty["model"] is None

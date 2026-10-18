@@ -1,0 +1,32 @@
+{
+  "tested_at": "2026-10-17T15:07:24.455252+00:00",
+  "test_mode": "one live AMD completion through authenticated capture endpoint; temporary synthetic database",
+  "endpoint": "POST /api/v1/capture/structure",
+  "requested_model": "Gemma-4-31B-IT",
+  "http_status": 200,
+  "execution": {
+    "provider": "AMD Token Factory",
+    "requested_model": "Gemma-4-31B-IT",
+    "model_id": "self-dploy/Gemma-4-31B-IT",
+    "requested_at": "2026-10-17T15:07:14.663904+00:00",
+    "latency_ms": 9787.2,
+    "usage": {
+      "prompt_tokens": 309,
+      "completion_tokens": 203,
+      "total_tokens": 512,
+      "reasoning_tokens": 0
+    },
+    "status": "success",
+    "http_status": 200,
+    "error_code": null
+  },
+  "source_excerpts_validated": true,
+  "automatic_retry_count": 0,
+  "fallback_used": false,
+  "submission_http_status": 201,
+  "submission_status": "Pending",
+  "original_preserved": true,
+  "excluded_from_approved_library": true,
+  "field_categories": 10,
+  "confirmed_root_cause_blank": true
+}

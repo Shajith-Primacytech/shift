@@ -144,6 +144,14 @@ test("grounded workflow has verified source references and logs a pending outcom
     page.getByText("AI-selected approved guidance", { exact: true }),
   ).toBeVisible();
   await expect(page.locator(".source-card")).toHaveCount(2);
+  const model = page.getByRole("region", {
+    name: "Troubleshooting evidence selection",
+  });
+  await expect(model).toContainText("test-only-mocked-amd");
+  await expect(model).toContainText("Inference via AMD Token Factory");
+  await expect(
+    model.getByText("Powered by Google Gemma", { exact: true }),
+  ).toHaveCount(0);
   await page.getByRole("button", { name: "Continue to checks" }).click();
   await expect(
     page.getByRole("button", { name: "Log outcome" }),
@@ -330,11 +338,11 @@ test("browser audio recording can be captured, previewed, and removed", async ({
     };
   });
   await signIn(page);
-  await page.goto("http://127.0.0.1:3000/knowledge/capture");
+  await page.goto("/knowledge/capture");
   await page.getByRole("tab", { name: "Voice" }).click();
   await page.getByRole("button", { name: "Start recording" }).click();
   await expect(
-    page.getByRole("button", { name: "Finish recording first" }),
+    page.getByRole("button", { name: "Finish voice capture first" }),
   ).toBeDisabled();
   await page.getByRole("button", { name: "Stop recording" }).click();
   await expect(page.getByText("Voice recording attached")).toBeVisible();
@@ -378,20 +386,17 @@ test("failed capture remains editable and never reports a successful save", asyn
 test("supervisor revocation removes a saved source from the library", async ({
   page,
 }) => {
-  const created = await page.request.post(
-    "http://127.0.0.1:8000/api/v1/submissions",
-    {
-      headers: { "X-Shift-Request": "1" },
-      multipart: {
-        metadata: JSON.stringify({
-          machineId: "CNC-01",
-          title: "Synthetic revocation source",
-          symptom: "Vibration",
-          content: "A synthetic observation to exercise revocation.",
-        }),
-      },
+  const created = await page.request.post("/api/v1/submissions", {
+    headers: { "X-Shift-Request": "1" },
+    multipart: {
+      metadata: JSON.stringify({
+        machineId: "CNC-01",
+        title: "Synthetic revocation source",
+        symptom: "Vibration",
+        content: "A synthetic observation to exercise revocation.",
+      }),
     },
-  );
+  });
   expect(created.status()).toBe(201);
   await page.getByRole("button", { name: "Sign out" }).click();
   await signIn(page, "super");
@@ -420,22 +425,42 @@ test("supervisor revocation removes a saved source from the library", async ({
   ).toBeVisible();
 });
 
-test("troubleshooting timeout displays an error without demo fallback", async ({page}) => {
+test("troubleshooting timeout displays an error without demo fallback", async ({
+  page,
+}) => {
   await page.goto("/troubleshoot");
-  await page.route("**/api/v1/troubleshoot", route=>route.fulfill({status:504,json:{detail:"Inference timed out. No answer is available."}}));
-  await page.getByRole("button",{name:"Review evidence"}).click();
-  await expect(page.locator(".guidance-box [role=alert]")).toContainText("Inference timed out");
-  await expect(page.getByRole("button",{name:"Continue to checks"})).toBeDisabled();
+  await page.route("**/api/v1/troubleshoot", (route) =>
+    route.fulfill({
+      status: 504,
+      json: { detail: "Inference timed out. No answer is available." },
+    }),
+  );
+  await page.getByRole("button", { name: "Review evidence" }).click();
+  await expect(page.locator(".guidance-box [role=alert]")).toContainText(
+    "Inference timed out",
+  );
+  await expect(
+    page.getByRole("button", { name: "Continue to checks" }),
+  ).toBeDisabled();
   await expect(page.locator(".source-card")).toHaveCount(0);
-  await expect(page.getByRole("button",{name:"Retry troubleshooting"})).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Retry troubleshooting" }),
+  ).toBeVisible();
 });
 
-test("custom troubleshooting question requires text and stays within API length", async ({ page }) => {
+test("custom troubleshooting question requires text and stays within API length", async ({
+  page,
+}) => {
   await page.goto("/troubleshoot");
   const context = page.getByLabel("Additional context", { exact: false });
   await expect(context).toHaveAttribute("maxlength", "1400");
-  await page.getByRole("button", { name: "Something else", exact: true }).click();
-  const submit = page.getByRole("button", { name: "Review evidence", exact: true });
+  await page
+    .getByRole("button", { name: "Something else", exact: true })
+    .click();
+  const submit = page.getByRole("button", {
+    name: "Review evidence",
+    exact: true,
+  });
   await expect(submit).toBeDisabled();
   await context.fill("    ");
   await expect(submit).toBeDisabled();

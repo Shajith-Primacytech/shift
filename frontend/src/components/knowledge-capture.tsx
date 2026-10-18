@@ -16,6 +16,8 @@ import { machines, type Attachment } from "@/lib/demo-data";
 import { useKnowledge } from "./knowledge-provider";
 import { DemoNotice, PageHeading } from "./ui";
 import { VoiceRecorder } from "./voice-recorder";
+import { CaptureAI } from "./capture-ai";
+import type { CaptureReview } from "@/lib/capture-structure";
 export function KnowledgeCapture() {
   const params = useSearchParams();
   const initialMachine = params.get("machine");
@@ -35,9 +37,26 @@ export function KnowledgeCapture() {
   const [audio, setAudio] = useState<Attachment | null>(null);
   const [fileError, setFileError] = useState("");
   const [submitted, setSubmitted] = useState("");
+  const [aiBusy, setAIBusy] = useState(false);
+  const [aiProposal, setAIProposal] = useState(false);
+  const [aiReview, setAIReview] = useState<CaptureReview>();
+  const [aiReviewSource, setAIReviewSource] = useState("");
+  const source = {
+    machineId: machine,
+    title: title.trim(),
+    symptom: symptom.trim(),
+    content: content.trim(),
+  };
+  const sourceSignature = JSON.stringify(source);
   async function submit(e: FormEvent) {
     e.preventDefault();
-    if (recordingBusy || saving) return;
+    if (recordingBusy || saving || aiBusy) return;
+    if (aiProposal && (!aiReview || aiReviewSource !== sourceSignature)) {
+      setFormError(
+        "Review and confirm the current AI structure, or discard it to submit manually. The original text is unchanged.",
+      );
+      return;
+    }
     if (
       !title.trim() ||
       !symptom.trim() ||
@@ -58,6 +77,7 @@ export function KnowledgeCapture() {
         symptom: symptom.trim(),
         content: content.trim(),
         kind: "Field note",
+        ...(aiReview && aiReviewSource === sourceSignature ? { aiReview } : {}),
         attachments: [...files, ...(audio ? [audio] : [])],
       });
       setSubmitted(id);
@@ -102,6 +122,9 @@ export function KnowledgeCapture() {
                 setFiles([]);
                 setAudio(null);
                 setMode("Write");
+                setAIReview(undefined);
+                setAIProposal(false);
+                setAIReviewSource("");
               }}
             >
               Capture another
@@ -198,6 +221,22 @@ export function KnowledgeCapture() {
             <VoiceRecorder
               onChange={setAudio}
               onBusyChange={setRecordingBusy}
+              active={mode === "Voice"}
+              disabled={saving || aiBusy}
+              onUseTranscript={(text) => {
+                const next = content.trim()
+                  ? `${content.trim()}\n\nReviewed voice transcript:\n${text}`
+                  : text;
+                if (next.length > 8000) {
+                  setFormError(
+                    "Transcript and existing observation exceed 8000 characters. Shorten them before using the transcript; existing text was preserved.",
+                  );
+                  return false;
+                }
+                setContent(next);
+                setFormError("");
+                return true;
+              }}
             />
           </div>
           <div
@@ -297,6 +336,16 @@ export function KnowledgeCapture() {
               onChange={(e) => setContent(e.target.value)}
             />
           </label>
+          <CaptureAI
+            source={source}
+            disabled={saving || recordingBusy}
+            onBusyChange={setAIBusy}
+            onProposalChange={setAIProposal}
+            onChange={(value) => {
+              setAIReview(value);
+              setAIReviewSource(sourceSignature);
+            }}
+          />
           <div role="alert" className="form-error">
             {formError}
           </div>
@@ -308,12 +357,12 @@ export function KnowledgeCapture() {
             <button
               className="button primary"
               type="submit"
-              disabled={recordingBusy || saving}
+              disabled={recordingBusy || saving || aiBusy}
             >
               {saving
                 ? "Saving…"
                 : recordingBusy
-                  ? "Finish recording first"
+                  ? "Finish voice capture first"
                   : "Submit for review"}
               <ArrowRight size={16} />
             </button>

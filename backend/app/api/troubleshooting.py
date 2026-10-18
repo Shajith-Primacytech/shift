@@ -1,6 +1,7 @@
 import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from app.api.storage import current_user, database
 from app.rag.service import Question, RagFailure, RagService
@@ -39,7 +40,9 @@ async def troubleshoot(
         try:
             result = await service.answer(body)
         except RagFailure as e:
-            raise HTTPException(e.status, detail=str(e)) from None
+            return JSONResponse(
+                {"detail": str(e), "execution": e.execution}, status_code=e.status
+            )
         # Sessions can expire or be logged out while a slow provider request runs.
         current_user(request, db)
         return result

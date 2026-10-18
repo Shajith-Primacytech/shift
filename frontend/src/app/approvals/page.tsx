@@ -14,6 +14,7 @@ import {
   PageHeading,
   StatusBadge,
 } from "@/components/ui";
+import { SavedCaptureDetails } from "@/components/saved-capture-details";
 import { AttachmentPreview } from "@/components/attachment-preview";
 export default function ApprovalsPage() {
   const { records, review, user, refresh } = useKnowledge();
@@ -183,6 +184,9 @@ export default function ApprovalsPage() {
             <div className="source-content observation-content">
               {selected.content}
             </div>
+            {selected.aiCapture && (
+              <SavedCaptureDetails capture={selected.aiCapture} />
+            )}
             {selected.attachments?.map((a, i) => (
               <AttachmentPreview key={i} attachment={a} />
             ))}

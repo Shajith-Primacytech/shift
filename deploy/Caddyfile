@@ -1,0 +1,4 @@
+# Optional TLS ingress on an existing host with this DNS name pointed to it.
+{$SHIFT_API_HOST} {
+    reverse_proxy 127.0.0.1:8000
+}

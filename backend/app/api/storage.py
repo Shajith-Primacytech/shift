@@ -20,6 +20,7 @@ from fastapi import (
 )
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from app.storage.capture_schema import Submission, SubmissionFields, mapped_submission
 from app.storage.database import connect
 from app.storage.security import hash_password, now, token_hash, verify_password
 
@@ -155,7 +156,18 @@ def serialize(db, row):
             (r["id"],),
         )
     ]
+    ai = db.execute(
+        "SELECT * FROM capture_ai_runs WHERE version_id=?", (r["id"],)
+    ).fetchone()
     return dict(
+        aiCapture={
+            "runId": ai["id"],
+            "execution": json.loads(ai["execution"]),
+            "original": json.loads(ai["original_submission"]),
+            "fields": json.loads(ai["reviewed_structure"]),
+        }
+        if ai
+        else None,
         id=r["record_id"],
         versionId=r["id"],
         revision=r["revision"],
@@ -203,19 +215,6 @@ def submissions(
         (user["role"], user["id"]),
     )
     return [serialize(db, r) for r in rows]
-
-
-class Submission(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    machineId: str = Field(min_length=1, max_length=80)
-    title: str = Field(min_length=1, max_length=140)
-    symptom: str = Field(min_length=1, max_length=200)
-    content: str = Field(min_length=10, max_length=8000)
-    kind: Literal["SOP", "Field note", "Resolution"] = "Field note"
-    problem: str = Field(default="", max_length=8000)
-    rootCause: str = Field(default="", max_length=8000)
-    resolution: str = Field(default="", max_length=8000)
-    safetyNotes: str = Field(default="", max_length=8000)
 
 
 async def save_submission(metadata, files, user, db, record_id=None):
@@ -275,6 +274,36 @@ async def save_submission(metadata, files, user, db, record_id=None):
             (record_id, user["id"], timestamp),
         )
     version_id = record_id + f"-v{revision}"
+    ai_review = body.aiReview
+    if ai_review is not None:
+        run = db.execute(
+            "SELECT * FROM capture_ai_runs WHERE id=? AND owner_id=?",
+            (ai_review.runId, user["id"]),
+        ).fetchone()
+        if (
+            not run
+            or run["version_id"]
+            or json.loads(run["execution"])["status"] != "success"
+        ):
+            raise HTTPException(
+                422,
+                "AI run is unavailable, failed, or already submitted. Discard AI to submit manually.",
+            )
+        original = SubmissionFields.model_validate(
+            body.model_dump(exclude={"aiReview"})
+        )
+        if original.model_dump() != json.loads(run["original_submission"]):
+            raise HTTPException(
+                422,
+                "Original fields changed after structuring. Discard the AI proposal or structure again.",
+            )
+        try:
+            body = mapped_submission(original, ai_review.fields)
+        except ValidationError:
+            raise HTTPException(
+                422,
+                "Reviewed structure exceeds submission limits. Shorten the fields or submit manually.",
+            ) from None
     db.execute(
         "INSERT INTO knowledge_versions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (
@@ -296,6 +325,11 @@ async def save_submission(metadata, files, user, db, record_id=None):
             timestamp,
         ),
     )
+    if ai_review is not None:
+        db.execute(
+            "UPDATE capture_ai_runs SET version_id=?,reviewed_structure=? WHERE id=?",
+            (version_id, ai_review.fields.model_dump_json(), ai_review.runId),
+        )
     for name, media, data in sources:
         db.execute(
             "INSERT INTO source_documents VALUES (?,?,?,?,?,?,?,?)",

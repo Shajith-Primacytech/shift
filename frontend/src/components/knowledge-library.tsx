@@ -1,4 +1,5 @@
 "use client";
+import { SavedCaptureDetails } from "./saved-capture-details";
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -46,8 +47,8 @@ export function KnowledgeLibrary() {
       />
       <DemoNotice>
         Local knowledge library · Human-authored synthetic examples and saved
-        submissions. Supervisor decisions are saved; only currently approved knowledge
-        is eligible for troubleshooting retrieval.
+        submissions. Supervisor decisions are saved; only currently approved
+        knowledge is eligible for troubleshooting retrieval.
       </DemoNotice>
       <div className="filter-bar">
         <div className="input-with-icon">
@@ -156,6 +157,9 @@ export function KnowledgeLibrary() {
               </span>
             </div>
             <div className="source-content">{selected.content}</div>
+            {selected.aiCapture && (
+              <SavedCaptureDetails capture={selected.aiCapture} />
+            )}
             {selected.attachments?.map((a, i) => (
               <AttachmentPreview key={i} attachment={a} />
             ))}

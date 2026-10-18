@@ -19,7 +19,12 @@ import {
   Volume2,
   Wrench,
 } from "lucide-react";
-import { askTroubleshooting, type TroubleshootingAnswer } from "@/lib/api";
+import {
+  ApiError,
+  askTroubleshooting,
+  type TroubleshootingAnswer,
+} from "@/lib/api";
+import type { AIExecution } from "@/lib/ai-models";
 import { GroundedAnswer } from "./grounded-answer";
 import { machines } from "@/lib/demo-data";
 import { useKnowledge } from "./knowledge-provider";
@@ -58,11 +63,15 @@ export function Troubleshooting() {
   const [answer, setAnswer] = useState<TroubleshootingAnswer | null>(null);
   const [asking, setAsking] = useState(false);
   const [answerError, setAnswerError] = useState("");
+  const [failureExecution, setFailureExecution] = useState<AIExecution | null>(
+    null,
+  );
   const hasEvidence = answer?.status === "answered";
   async function ask() {
     if (asking) return;
     setAnswer(null);
     setAnswerError("");
+    setFailureExecution(null);
     setAsking(true);
     setStep(1);
     try {
@@ -73,6 +82,8 @@ export function Troubleshooting() {
       setAnswer(await askTroubleshooting(machine, question));
     } catch (error) {
       setAnswerError((error as Error).message);
+      if (error instanceof ApiError)
+        setFailureExecution(error.execution || null);
     } finally {
       setAsking(false);
     }
@@ -204,7 +215,7 @@ export function Troubleshooting() {
             <span className="eyebrow">
               STEP {String(step + 1).padStart(2, "0")} OF 04
             </span>
-            <Badge tone="blue">Evidence-based workflow</Badge>
+            <Badge tone="info">Evidence-based workflow</Badge>
           </div>
           {step === 0 && (
             <>
@@ -250,7 +261,12 @@ export function Troubleshooting() {
                 ))}
               </div>
               <label>
-                Additional context <span className="field-hint">{symptom === "Something else" ? "Required · at least 5 characters" : "Optional"}</span>
+                Additional context{" "}
+                <span className="field-hint">
+                  {symptom === "Something else"
+                    ? "Required · at least 5 characters"
+                    : "Optional"}
+                </span>
                 <textarea
                   maxLength={1400}
                   rows={3}
@@ -277,6 +293,7 @@ export function Troubleshooting() {
                 {machine} <ChevronRight size={13} /> {symptom}
               </p>
               <GroundedAnswer
+                failureExecution={failureExecution}
                 answer={answer}
                 loading={asking}
                 error={answerError}
@@ -432,7 +449,9 @@ export function Troubleshooting() {
                 className="button primary"
                 disabled={
                   asking ||
-                  (step === 0 && symptom === "Something else" && context.trim().length < 5) ||
+                  (step === 0 &&
+                    symptom === "Something else" &&
+                    context.trim().length < 5) ||
                   (step === 1 && !hasEvidence) ||
                   (step === 2 && !checks.every(Boolean))
                 }

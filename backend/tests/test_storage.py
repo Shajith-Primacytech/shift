@@ -285,7 +285,7 @@ def test_migration_and_seed_are_idempotent(settings):
     with connect(settings.database_path) as db:
         assert db.execute("SELECT count(*) FROM machines").fetchone()[0] == 6
         assert db.execute("SELECT count(*) FROM knowledge_records").fetchone()[0] == 6
-        assert db.execute("SELECT count(*) FROM schema_migrations").fetchone()[0] == 2
+        assert db.execute("SELECT count(*) FROM schema_migrations").fetchone()[0] == 3
         assert db.execute("PRAGMA foreign_key_check").fetchall() == []
 
 

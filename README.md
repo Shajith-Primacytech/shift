@@ -3,6 +3,15 @@
 SHIFT preserves technician knowledge for the AMD Developer Hackathon ACT III.
 All demonstration factory data and telemetry are synthetic.
 
+## ACT III deployment preparation
+
+The portable backend container, persistent-volume configuration, Vercel same-origin
+API proxy, private judge provisioning and launch instructions are in
+[`deploy/README.md`](deploy/README.md). Current validation and release status are in
+[`docs/ACT_III_DEPLOYMENT_REPORT.md`](docs/ACT_III_DEPLOYMENT_REPORT.md).
+The repository remains private; public hosting and publication require explicit
+owner confirmation. No AMD credentials belong in frontend or public artifacts.
+
 ## Current status: Stage 3 vertical slice
 
 Stage 2 persistence, authentication and supervisor review remain operational.
@@ -107,6 +116,58 @@ revision; the previous approved version immediately leaves active knowledge read
 The revision API requires an explicit new attachment set; it does not silently copy
 attachments from the old version.
 
+## Optional AMD Gemma capture structuring
+
+On `/knowledge/capture`, fill the existing machine, title, symptom and written
+observation, then select **Structure with AI**. Gemma proposes ten categories from
+exact source excerpts. Review/edit them and confirm the review checkbox, or discard
+the proposal to capture manually. Original observations remain intact. Submissions
+still require a different supervisor's approval before library/RAG eligibility.
+
+The feature uses the existing AMD transport with `Gemma-4-31B-IT`, strict JSON
+output and no automatic retries/fallback. `AMD_MODEL` still controls troubleshooting
+independently. Backend-only `AMD_API_KEY` in ignored `backend/.env` is reused; never
+put credentials in chat, source code or frontend configuration. Restart the backend
+to apply the additive `003_capture_ai.sql` migration, then rebuild/start the frontend.
+AI execution details are available under the proposed structure and in saved review
+and library details. Manual capture works if AI is unavailable.
+
+See `docs/GEMMA_CAPTURE_REPORT.md` for implementation, regression results,
+limitations and exact demo steps, and `docs/GEMMA_CAPTURE_LIVE.json` for the
+single sanitized live integration result.
+
+## Voice capture and judge-visible model execution
+
+The existing Voice tab now supports local English transcription, an editable
+transcript, and **Use Transcript**. This explicit action appends to existing written
+observations. Gemma receives only the reviewed written content; audio remains an
+optional authenticated attachment. Approval and RAG eligibility are unchanged.
+
+For the voice-enabled backend, use:
+
+```sh
+cd /Users/mohamedshajith/Projects/shift/backend
+uv sync --locked --extra voice
+uv run --locked --extra voice python -m app.speech.prepare
+uv run --locked --extra voice uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+Preparation downloads a pinned public Whisper tiny.en model. Recognition itself
+runs offline on CPU using faster-whisper/PyAV, with no paid speech service. Without
+the optional extra/model, ordinary recording attachments and manual capture remain
+available. Keep `--extra voice` when launching with uv so the optional dependencies
+remain installed.
+
+A reusable model indicator shows configured Google Gemma separately from actual
+execution details. Troubleshooting displays its returned model/provider from the
+request metadata, with no guessed model ID when metadata is absent. No demo flag,
+fake inference path, permission bypass or automatic submission was added.
+
+See `docs/VOICE_DEMO_REPORT.md` for the audit, validation, complete changed-file
+list and five-minute demonstration, and `docs/VOICE_LOCAL_SMOKE.json` for sanitized
+real local transcription evidence. English and Chromium were tested; a rehearsal
+with the actual presentation microphone remains necessary.
+
 ## API boundaries
 
 All business-data routes require authentication. Health, login, and API documentation
@@ -126,6 +187,10 @@ scrypt password hashes are stored. Failed sign-ins are limited per client/userna
 - `GET /api/v1/submissions/{id}/history`: authorized version/review audit history
 - `GET /api/v1/documents/{id}`: authorized original source download
 
+- `GET /api/v1/ai/configuration`: authenticated configured model information; never runs inference.
+- `GET /api/v1/capture/voice/status`: authenticated local speech readiness.
+- `POST /api/v1/capture/transcribe`: authenticated temporary audio processing with local English speech recognition; no knowledge submission.
+- `POST /api/v1/capture/structure`: authenticated optional Gemma excerpt structuring; no approval or automatic knowledge submission.
 - `POST /api/v1/troubleshoot`: authenticated `{machine_id, question}`; approved-source quotes and citations, or explicit insufficient-evidence/error response.
 
 Chunk tables now support retrieval. Conversation history remains deferred. Original
@@ -160,15 +225,18 @@ See `docs/STAGE_2_REPORT.md` for measured results and remaining limitations.
 ## Modular architecture and remaining work
 
 `frontend/src/lib/api.ts` owns typed network calls; `knowledge-provider.tsx` owns
-session/workspace state. Page components own presentation. `shift-brand.tsx` is the
-replaceable text logo; CSS variables centralize base colors and typography.
+session/workspace state. Page components own presentation. `shift-logo.tsx` centralizes the official source-derived SVG wordmark with gold
+and forest variants; `shift-brand.tsx` keeps the compact sidebar placement. The
+original PNG and conversion details are in `frontend/public/branding/README.md`;
+see `docs/LOGO_IMPLEMENTATION_REPORT.md` for validation. CSS semantic
+variables and Tailwind theme aliases centralize the forest, charcoal and gold palette.
 
 SQLite remains the source of truth. LlamaIndex adapters recheck current approval
 before inference and delivery. Sentence Transformers supplies local embeddings;
 SQLite FTS5 and NumPy provide hybrid retrieval. The modular AMD provider is invoked
 only by authenticated troubleshooting. Ragas remains deferred offline evaluation.
 
-Deferred: attachment extraction/transcription, durable indexing jobs, Ragas,
+Deferred: document extraction, multilingual speech, durable indexing jobs, Ragas,
 free-form generated maintenance instructions, conversations, recovery and deployment
 hardening. This local synthetic MVP makes no production-readiness claim.
 
@@ -180,7 +248,7 @@ and an AMD-compatible httpx transport. It is called through the narrow RAG servi
 settings from backend-local configuration. Secrets are excluded from settings dumps.
 No adapter constructor, health check or startup hook sends inference requests.
 
-The current configured model is unchanged. Model switching uses `AMD_MODEL`; no
+The configured troubleshooting model is unchanged. Its model switching uses `AMD_MODEL`; no
 automatic provider/model fallback occurs. See `docs/AMD_ADAPTER_REPORT.md` for retry
 semantics, validation results and limitations. Run mocked tests with:
 

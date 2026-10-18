@@ -4,6 +4,9 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api.ai import router as ai_router
+from app.api.capture import router as capture_router
+from app.api.speech import router as speech_router
 from app.api.health import router
 from app.api.storage import router as storage_router
 from app.api.troubleshooting import router as troubleshooting_router
@@ -65,6 +68,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(router, prefix="/api/v1")
     app.include_router(storage_router, prefix="/api/v1")
     app.include_router(troubleshooting_router, prefix="/api/v1")
+    app.include_router(capture_router, prefix="/api/v1")
+    app.include_router(ai_router, prefix="/api/v1")
+    app.include_router(speech_router, prefix="/api/v1")
     return app
 
 

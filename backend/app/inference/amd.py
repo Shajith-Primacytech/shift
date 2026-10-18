@@ -80,6 +80,13 @@ class AMDInference:
                                     ],
                                     "max_tokens": request.max_tokens,
                                     "stream": False,
+                                    **(
+                                        {
+                                            "response_format": request.response_format.model_dump()
+                                        }
+                                        if request.response_format is not None
+                                        else {}
+                                    ),
                                 },
                             )
                         except (httpx.ConnectTimeout, httpx.PoolTimeout):
@@ -113,7 +120,13 @@ class AMDInference:
                                     "http", status=response.status_code
                                 )
                             else:
-                                result = self._parse(response, key)
+                                try:
+                                    result = self._parse(response, key)
+                                except InferenceError as exc:
+                                    # Token counts can still be useful when a completion is
+                                    # truncated or unusable. Never retain text/error payloads.
+                                    exc.usage = self._failure_usage(response, key)
+                                    raise
                                 return CompletionResult(
                                     **result,
                                     provider="amd",
@@ -140,6 +153,27 @@ class AMDInference:
         error.attempts = attempts
         error.latency_ms = (time.perf_counter() - start) * 1000
         raise error from None
+
+    @staticmethod
+    def _failure_usage(response: httpx.Response, key: str) -> TokenUsage | None:
+        try:
+            data = response.json()
+        except (ValueError, UnicodeError):
+            return None
+        if not isinstance(data, dict) or key in str(data):
+            return None
+        usage = data.get("usage")
+        if not isinstance(usage, dict):
+            return None
+        counts = {name: usage.get(name) for name in TokenUsage.model_fields}
+        details = usage.get("completion_tokens_details")
+        if counts["reasoning_tokens"] is None and isinstance(details, dict):
+            counts["reasoning_tokens"] = details.get("reasoning_tokens")
+        if any(
+            v is not None and (type(v) is not int or v < 0) for v in counts.values()
+        ):
+            return None
+        return TokenUsage(**counts)
 
     @staticmethod
     def _parse(response: httpx.Response, key: str) -> dict:

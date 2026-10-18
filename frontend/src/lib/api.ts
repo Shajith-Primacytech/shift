@@ -1,3 +1,9 @@
+import type { AIExecution } from "./ai-models";
+import type {
+  CaptureResult,
+  CaptureReview,
+  CaptureSource,
+} from "./capture-structure";
 import type { KnowledgeRecord } from "./demo-data";
 
 export type User = {
@@ -10,15 +16,18 @@ export class ApiError extends Error {
   constructor(
     message: string,
     public status: number,
+    public execution?: AIExecution,
   ) {
     super(message);
   }
 }
-// Match the browser hostname so localhost and 127.0.0.1 both use same-site cookies.
+// Production uses the same-origin Next.js proxy; local development keeps port 8000.
 export function apiBase() {
   return (
     process.env.NEXT_PUBLIC_API_URL ||
-    `http://${typeof window === "undefined" ? "localhost" : window.location.hostname}:8000`
+    (process.env.NODE_ENV === "production"
+      ? ""
+      : `http://${typeof window === "undefined" ? "localhost" : window.location.hostname}:8000`)
   );
 }
 export async function api<T>(
@@ -47,6 +56,7 @@ export async function api<T>(
         ? body.detail
         : "The request could not be completed. Check your input.",
       response.status,
+      body.execution,
     );
   }
   return response.status === 204 ? (undefined as T) : response.json();
@@ -61,7 +71,7 @@ export function jsonRequest(body: unknown): RequestInit {
 export type NewKnowledge = Pick<
   KnowledgeRecord,
   "title" | "machineId" | "symptom" | "content" | "kind" | "attachments"
->;
+> & { aiReview?: CaptureReview };
 export const knowledgeApi = {
   approved: () => api<KnowledgeRecord[]>("/knowledge"),
   submissions: () => api<KnowledgeRecord[]>("/submissions"),
@@ -87,6 +97,7 @@ export const knowledgeApi = {
 };
 
 export type TroubleshootingAnswer = {
+  execution?: AIExecution | null;
   status: "answered" | "insufficient_evidence";
   mode: "ai_selected_quotes" | "no_generation";
   message: string;
@@ -109,5 +120,40 @@ export function askTroubleshooting(machine_id: string, question: string) {
   return api<TroubleshootingAnswer>("/troubleshoot", {
     ...jsonRequest({ machine_id, question }),
     signal: AbortSignal.timeout(75000),
+  });
+}
+
+export function structureKnowledge(source: CaptureSource) {
+  return api<CaptureResult>("/capture/structure", {
+    ...jsonRequest(source),
+    signal: AbortSignal.timeout(65000),
+  });
+}
+
+export type VoiceStatus = {
+  available: boolean;
+  provider: string;
+  model: string;
+  language: "en";
+  max_duration_seconds: number;
+};
+export type VoiceTranscript = {
+  text: string;
+  provider: string;
+  model: string;
+  language: "en";
+  duration_seconds: number;
+  latency_ms: number;
+};
+export function voiceStatus() {
+  return api<VoiceStatus>("/capture/voice/status");
+}
+export function transcribeVoice(audio: Blob, signal: AbortSignal) {
+  const data = new FormData();
+  data.append("file", audio, "voice-observation");
+  return api<VoiceTranscript>("/capture/transcribe", {
+    method: "POST",
+    body: data,
+    signal,
   });
 }

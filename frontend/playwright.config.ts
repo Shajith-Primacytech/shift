@@ -18,6 +18,9 @@ export default defineConfig({
         SHIFT_E2E_LIVE: "0",
         SHIFT_E2E_API_PORT: apiPort,
         SHIFT_CORS_ORIGINS: JSON.stringify([baseURL]),
+        // Presentation metadata must match the mocked capture provider. This
+        // sentinel is test-only; SHIFT_E2E_LIVE=0 prevents outbound inference.
+        AMD_API_KEY: "browser-test-only-not-a-real-credential",
       },
       url: `http://127.0.0.1:${apiPort}/api/v1/health`,
       reuseExistingServer: false,

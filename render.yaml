@@ -10,7 +10,6 @@ services:
     dockerfilePath: ./backend/Dockerfile.hackathon
     autoDeployTrigger: "off"
     healthCheckPath: /api/v1/ready
-    maxShutdownDelaySeconds: 30
     envVars:
       - key: SHIFT_ENVIRONMENT
         value: production

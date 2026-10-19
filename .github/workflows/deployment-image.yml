@@ -15,7 +15,10 @@ jobs:
       - name: Check complete local model workload within free host memory
         timeout-minutes: 8
         run: |
-          docker run --rm --memory=512m --memory-swap=512m \
+          container=shift-memory-profile
+          cleanup() { docker rm -f "$container" >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          docker create --name "$container" --memory=512m --memory-swap=512m \
             --entrypoint /app/.venv/bin/python shift-hackathon:validation -c '
           from app.rag.embeddings import local_model
           print("Loading pinned embedding model", flush=True)
@@ -27,3 +30,12 @@ jobs:
           speech = WhisperModel("/opt/models/whisper", device="cpu", compute_type="int8", cpu_threads=1, num_workers=1)
           print("Both model workloads loaded within 512 MB", flush=True)
           '
+          docker start "$container"
+          while [ "$(docker inspect --format '{{.State.Running}}' "$container")" = true ]; do
+            docker stats --no-stream --format 'memory={{.MemUsage}} percent={{.MemPerc}}' "$container" || true
+            sleep 0.25
+          done
+          docker logs "$container"
+          state=$(docker inspect --format 'exit={{.State.ExitCode}} oom_killed={{.State.OOMKilled}} error={{json .State.Error}}' "$container")
+          echo "$state"
+          test "$(docker inspect --format '{{.State.ExitCode}}' "$container")" -eq 0

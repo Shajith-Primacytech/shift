@@ -1,7 +1,10 @@
 FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 UV_LINK_MODE=copy \
     HF_HOME=/opt/models/huggingface SHIFT_SPEECH_MODEL_PATH=/opt/models/whisper \
-    HF_HUB_DISABLE_TELEMETRY=1 OMP_NUM_THREADS=1
+    LLAMA_INDEX_CACHE_DIR=/tmp/llama_index \
+    HF_HUB_DISABLE_TELEMETRY=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+    OPENBLAS_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 TOKENIZERS_PARALLELISM=false \
+    MALLOC_ARENA_MAX=2
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libgomp1 \
     && rm -rf /var/lib/apt/lists/* && pip install --no-cache-dir uv==0.11.21
@@ -11,7 +14,8 @@ COPY app ./app
 # Pinned public models only. No credentials, migrations or automatic provisioning.
 RUN .venv/bin/python -m app.speech.prepare \
     && .venv/bin/python -c 'from huggingface_hub import snapshot_download; from app.rag.embeddings import MODEL, REVISION; snapshot_download(MODEL, revision=REVISION, allow_patterns=["*.json","*.txt","*.safetensors","1_Pooling/*"], token=False)'
-RUN groupadd --gid 10001 shift && useradd --uid 10001 --gid shift --no-create-home shift
+RUN groupadd --gid 10001 shift && useradd --uid 10001 --gid shift --no-create-home shift \
+    && chmod -R a+rX /opt/models
 ENV HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
     SHIFT_ENVIRONMENT=production SHIFT_STORAGE_BACKEND=postgres SHIFT_SEED_SYNTHETIC=false
 COPY deploy_start.py ./deploy_start.py

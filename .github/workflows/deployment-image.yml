@@ -1,41 +1,91 @@
 name: Hackathon Linux image validation
 on:
   push:
-    branches: [codex/hackathon-postgres-deployment]
+    branches: [codex/hackathon-postgres-deployment, codex/portfolio-phase-2b]
 permissions:
   contents: read
 jobs:
   image:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - name: Build reviewed backend on Linux
-        run: docker build --progress=plain -f backend/Dockerfile.hackathon -t shift-hackathon:validation backend
-      - name: Check complete local model workload within free host memory
-        timeout-minutes: 8
+        with:
+          fetch-depth: 0
+      - name: Save Phase 2B measurement files
         run: |
-          container=shift-memory-profile
-          cleanup() { docker rm -f "$container" >/dev/null 2>&1 || true; }
-          trap cleanup EXIT
-          docker create --name "$container" --memory=512m --memory-swap=512m \
-            --entrypoint /app/.venv/bin/python shift-hackathon:validation -c '
-          from app.rag.embeddings import local_model
-          print("Loading pinned embedding model", flush=True)
-          model = local_model()
-          vector = model.get_text_embedding("Synthetic hackathon deployment observation")
-          assert len(vector) == 384
-          print("Embedding succeeded; loading pinned speech model", flush=True)
-          from faster_whisper import WhisperModel
-          speech = WhisperModel("/opt/models/whisper", device="cpu", compute_type="int8", cpu_threads=1, num_workers=1)
-          print("Both model workloads loaded within 512 MB", flush=True)
-          '
-          docker start "$container"
-          while [ "$(docker inspect --format '{{.State.Running}}' "$container")" = true ]; do
-            docker stats --no-stream --format 'memory={{.MemUsage}} percent={{.MemPerc}}' "$container" || true
-            sleep 0.25
+          mkdir -p "$RUNNER_TEMP/shift-phase2b"
+          cp backend/scripts/profile_memory.py "$RUNNER_TEMP/shift-phase2b/profile_memory.py"
+      - name: Build exact Phase 2A baseline
+        run: |
+          git checkout --detach 5d4584dc5033013c27b396b18bb46e225bf6e21a
+          docker build --progress=plain -f backend/Dockerfile.hackathon -t shift-phase2a:baseline backend
+      - name: Build Phase 2B candidate
+        run: |
+          git checkout --detach "${GITHUB_SHA}"
+          docker build --progress=plain -f backend/Dockerfile.hackathon -t shift-phase2b:candidate backend
+      - name: Record image and installed-package sizes
+        run: |
+          mkdir -p "$RUNNER_TEMP/shift-phase2b/results"
+          for image in shift-phase2a:baseline shift-phase2b:candidate; do
+            safe_name=${image/:/-}
+            docker image inspect --format 'image_bytes={{.Size}}' "$image" | tee "$RUNNER_TEMP/shift-phase2b/results/${safe_name}-image.txt"
+            docker run --rm --entrypoint /bin/sh "$image" -c \
+              'du -sh /app/.venv/lib/python3.12/site-packages/torch /app/.venv/lib/python3.12/site-packages/transformers /app/.venv/lib/python3.12/site-packages/sentence_transformers /app/.venv/lib/python3.12/site-packages/llama_index /app/.venv/lib/python3.12/site-packages/ctranslate2 2>/dev/null; if [ -d /app/.venv/lib/python3.12/site-packages/nvidia ]; then du -sh /app/.venv/lib/python3.12/site-packages/nvidia; else echo "nvidia package directory: absent"; fi' \
+              | tee "$RUNNER_TEMP/shift-phase2b/results/${safe_name}-packages.txt"
           done
-          docker logs "$container"
-          state=$(docker inspect --format 'exit={{.State.ExitCode}} oom_killed={{.State.OOMKilled}} error={{json .State.Error}}' "$container")
-          echo "$state"
-          test "$(docker inspect --format '{{.State.ExitCode}}' "$container")" -eq 0
+      - name: Measure baseline and candidate under Linux memory limits
+        timeout-minutes: 12
+        run: |
+          results="$RUNNER_TEMP/shift-phase2b/results"
+          profiler="$RUNNER_TEMP/shift-phase2b/profile_memory.py"
+          migrations="$GITHUB_WORKSPACE/backend/migrations"
+          profile() {
+            image=$1 loader=$2 scenario=$3 limit=$4
+            name="profile-${loader}-${scenario}-${limit}"
+            output="$results/${name}"
+            docker rm -f "$name" >/dev/null 2>&1 || true
+            docker create --name "$name" --memory="$limit" --memory-swap="$limit" \
+              --env 'SHIFT_CORS_ORIGINS=["https://shift.example.com"]' \
+              --env LLAMA_INDEX_CACHE_DIR=/tmp/llama_index \
+              --mount "type=bind,source=$profiler,target=/app/scripts/profile_memory.py,readonly" \
+              --mount "type=bind,source=$migrations,target=/app/migrations,readonly" \
+              --entrypoint /app/.venv/bin/python "$image" \
+              /app/scripts/profile_memory.py --loader "$loader" --scenario "$scenario" \
+              --output /tmp/profile.json >/dev/null
+            docker start "$name" >/dev/null
+            while [ "$(docker inspect --format '{{.State.Running}}' "$name")" = true ]; do
+              docker stats --no-stream --format '{{.MemUsage}}' "$name" >> "${output}-stats.txt" || true
+              sleep 0.1
+            done
+            docker logs "$name" > "${output}-log.txt" 2>&1 || true
+            docker inspect --format 'exit={{.State.ExitCode}} oom_killed={{.State.OOMKilled}} error={{json .State.Error}}' "$name" \
+              | tee "${output}-state.txt"
+            docker cp "$name:/tmp/profile.json" "${output}-report.json" >/dev/null 2>&1 || true
+            docker rm "$name" >/dev/null
+          }
+          profile shift-phase2a:baseline baseline rag 1024m
+          profile shift-phase2b:candidate candidate rag 1024m
+          profile shift-phase2a:baseline baseline combined 1024m
+          profile shift-phase2b:candidate candidate combined 1024m
+          profile shift-phase2a:baseline baseline rag 512m
+          profile shift-phase2b:candidate candidate rag 512m
+          profile shift-phase2b:candidate candidate combined 512m
+          test "$(cut -d' ' -f1 "$results/profile-baseline-rag-1024m-state.txt")" = "exit=0"
+          test "$(cut -d' ' -f1 "$results/profile-candidate-rag-1024m-state.txt")" = "exit=0"
+          baseline_hash=$(python -c 'import json,sys; print(next(s["vector_sha256"] for s in json.load(open(sys.argv[1]))["stages"] if s["stage"] == "embedding_loaded"))' "$results/profile-baseline-rag-1024m-report.json")
+          candidate_hash=$(python -c 'import json,sys; print(next(s["vector_sha256"] for s in json.load(open(sys.argv[1]))["stages"] if s["stage"] == "embedding_loaded"))' "$results/profile-candidate-rag-1024m-report.json")
+          test "$baseline_hash" = "$candidate_hash"
+      - name: Summarize measurements
+        if: always()
+        run: |
+          for file in "$RUNNER_TEMP"/shift-phase2b/results/*-state.txt "$RUNNER_TEMP"/shift-phase2b/results/*-report.json; do
+            [ -f "$file" ] || continue
+            echo "## $(basename "$file")"
+            cat "$file"
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase-2b-linux-memory
+          path: ${{ runner.temp }}/shift-phase2b/results

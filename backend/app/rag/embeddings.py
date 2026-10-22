@@ -30,6 +30,7 @@ def local_model():
             max_length=256,
             local_files_only=True,
             trust_remote_code=False,
+            model_kwargs={"low_cpu_mem_usage": True},
         )
 
 

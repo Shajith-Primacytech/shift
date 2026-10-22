@@ -187,3 +187,7 @@ def test_render_contract(monkeypatch):
     monkeypatch.setenv("PORT", "12345")
     assert module.command()[module.command().index("--port") + 1] == "12345"
     assert module.command()[module.command().index("--workers") + 1] == "1"
+
+    dockerfile = (root / "backend/Dockerfile.hackathon").read_text()
+    assert "LLAMA_INDEX_CACHE_DIR=/tmp/llama_index" in dockerfile
+    assert "chmod -R a+rX /opt/models" in dockerfile
